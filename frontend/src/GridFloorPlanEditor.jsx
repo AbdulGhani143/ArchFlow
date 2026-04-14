@@ -3,7 +3,7 @@ import { Circle, Group, Layer, Line, Rect, Shape, Stage, Text, Transformer } fro
 
 const BASE_GRID_CELLS = 256;
 const CELLS_PER_FOOT = 4;
-const GRID_SIZE = 1;
+const GRID_SIZE = 0.25;
 const MIN_ROOM_SIZE = 1;
 const DOOR_WIDTH_FT = 3;
 const DOOR_DEPTH_FT = 0.6;
@@ -70,6 +70,36 @@ function placeFurniture(room) {
   const area = room.width * room.height;
   const isHoriz = room.width >= room.height;
 
+  const collides = (a, b, padding = 0.15) => (
+    a.x < b.x + b.w - padding &&
+    a.x + a.w > b.x + padding &&
+    a.y < b.y + b.h - padding &&
+    a.y + a.h > b.y + padding
+  );
+
+  const pushItem = (item) => {
+    if (!item || !Number.isFinite(item.w) || !Number.isFinite(item.h)) return null;
+
+    const margin = 0.2;
+    const maxW = Math.max(0.4, room.width - margin * 2);
+    const maxH = Math.max(0.4, room.height - margin * 2);
+    const nextW = clamp(item.w, 0.4, maxW);
+    const nextH = clamp(item.h, 0.4, maxH);
+    const nextX = clamp(item.x, margin, Math.max(margin, room.width - nextW - margin));
+    const nextY = clamp(item.y, margin, Math.max(margin, room.height - nextH - margin));
+
+    const normalized = {
+      ...item,
+      w: nextW,
+      h: nextH,
+      x: nextX,
+      y: nextY,
+    };
+
+    items.push(normalized);
+    return normalized;
+  };
+
   if (room.type.toLowerCase().includes("bed") || room.type === "Guest Room") {
     let bedW, bedH;
     if (minDim < 10) { bedW = 3; bedH = 6.5; }
@@ -88,50 +118,171 @@ function placeFurniture(room) {
       if (isHoriz) {
         bedX = room.width - 6.5 - 0.5;
         bedY = (room.height - bedW) / 2;
-        items.push({ type: typeLabel, w: 6.5, h: bedW, x: bedX, y: bedY, rot: 90 });
+        pushItem({ type: typeLabel, w: 6.5, h: bedW, x: bedX, y: bedY, rot: 90 });
         if (isKing) {
-          items.push({ type: "side-table", w: 1.5, h: 1.5, x: bedX + 6.5 - 1.5, y: bedY - 1.5 - 0.5 });
-          items.push({ type: "side-table", w: 1.5, h: 1.5, x: bedX + 6.5 - 1.5, y: bedY + bedW + 0.5 });
+          pushItem({ type: "side-table", w: 1.5, h: 1.5, x: bedX + 6.5 - 1.5, y: bedY - 1.5 - 0.5 });
+          pushItem({ type: "side-table", w: 1.5, h: 1.5, x: bedX + 6.5 - 1.5, y: bedY + bedW + 0.5 });
         }
       } else {
         bedY = room.height - 6.5 - 0.5;
-        items.push({ type: typeLabel, w: bedW, h: 6.5, x: bedX, y: bedY, rot: 180 });
+        pushItem({ type: typeLabel, w: bedW, h: 6.5, x: bedX, y: bedY, rot: 180 });
         if (isKing) {
-          items.push({ type: "side-table", w: 1.5, h: 1.5, x: bedX - 1.5 - 0.5, y: bedY });
-          items.push({ type: "side-table", w: 1.5, h: 1.5, x: bedX + bedW + 0.5, y: bedY });
+          pushItem({ type: "side-table", w: 1.5, h: 1.5, x: bedX - 1.5 - 0.5, y: bedY });
+          pushItem({ type: "side-table", w: 1.5, h: 1.5, x: bedX + bedW + 0.5, y: bedY });
         }
       }
     } else {
-      items.push({ type: typeLabel, w: bedW, h: 6.5, x: bedX, y: bedY, rot: 0 });
+      pushItem({ type: typeLabel, w: bedW, h: 6.5, x: bedX, y: bedY, rot: 0 });
       if (isKing) {
-        items.push({ type: "side-table", w: 1.5, h: 1.5, x: bedX - 1.5 - 0.5, y: bedY });
-        items.push({ type: "side-table", w: 1.5, h: 1.5, x: bedX + bedW + 0.5, y: bedY });
+        pushItem({ type: "side-table", w: 1.5, h: 1.5, x: bedX - 1.5 - 0.5, y: bedY });
+        pushItem({ type: "side-table", w: 1.5, h: 1.5, x: bedX + bedW + 0.5, y: bedY });
       }
+    }
+
+    if (room.width >= 9 && room.height >= 10) {
+      const wardrobeW = Math.min(5.6, room.width - 1.4);
+      pushItem({
+        type: "wardrobe",
+        w: wardrobeW,
+        h: 1.8,
+        x: (room.width - wardrobeW) / 2,
+        y: room.height - 2.3,
+      });
+    }
+
+    if (room.width >= 10 && room.height >= 11) {
+      pushItem({
+        type: "study-table",
+        w: 3.2,
+        h: 1.5,
+        x: 0.7,
+        y: room.height - 2.1,
+      });
     }
   } 
   else if (room.type === "Hall" || room.type === "Living") {
     if (area < 150) {
-      items.push({ type: "2-seater", w: 5, h: 3, x: (room.width - 5)/2, y: room.height - 3 - 1 });
+      const sofa = { type: "2-seater", w: 5, h: 3, x: (room.width - 5) / 2, y: room.height - 4 };
+      const table = { type: "center-table", w: 3, h: 1.6, x: (room.width - 3) / 2, y: sofa.y - 2.2 };
+      const tv = { type: "tv-unit", w: 4.5, h: 1.3, x: (room.width - 4.5) / 2, y: 0.5 };
+
+      pushItem(sofa);
+      if (room.width >= 10 && room.height >= 9) {
+        pushItem(table);
+      }
+      if (room.width >= 8) {
+        pushItem(tv);
+      }
     } else if (area < 250) {
-      items.push({ type: "3-seater", w: 7, h: 3, x: (room.width - 7)/2, y: room.height - 3 - 1 });
-      items.push({ type: "coffee-table", w: 4, h: 2, x: (room.width - 4)/2, y: room.height - 3 - 1 - 2.5 });
+      const sofa = { type: "3-seater", w: 7, h: 3, x: (room.width - 7) / 2, y: room.height - 4 };
+      const table = { type: "coffee-table", w: 4, h: 2, x: (room.width - 4) / 2, y: sofa.y - 2.6 };
+      const tv = { type: "tv-unit", w: 5.5, h: 1.4, x: (room.width - 5.5) / 2, y: 0.5 };
+      const dining = { type: "dining-4", w: 3.4, h: 3.4, x: 0.8, y: 0.8 };
+
+      if (room.width >= 12 && room.height >= 11 && collides(dining, tv)) {
+        tv.x = room.width - tv.w - 0.8;
+      }
+
+      pushItem(sofa);
+      pushItem(table);
+      pushItem(tv);
+      if (room.width >= 12 && room.height >= 11) {
+        pushItem(dining);
+      }
     } else {
-      items.push({ type: "l-shape-sofa", w: 8, h: 6, x: room.width - 8 - 1, y: room.height - 6 - 1, rot: 0 });
-      items.push({ type: "tv-unit", w: 6, h: 1.5, x: (room.width - 6)/2, y: 0.5 });
+      const sofa = { type: "l-shape-sofa", w: 8, h: 6, x: room.width - 9, y: room.height - 7, rot: 0 };
+      const tv = { type: "tv-unit", w: 6, h: 1.5, x: room.width - 7, y: 0.5 };
+      const table = {
+        type: "center-table",
+        w: 3.8,
+        h: 2.1,
+        x: sofa.x + (sofa.w - 3.8) / 2,
+        y: sofa.y - 2.9,
+      };
+      const dining = { type: "dining-6", w: 5.3, h: 3.3, x: 1, y: 1.2 };
+
+      if (collides(dining, tv)) {
+        dining.y = tv.y + tv.h + 0.8;
+      }
+      if (collides(dining, sofa)) {
+        dining.y = Math.max(0.8, sofa.y - dining.h - 0.8);
+      }
+
+      pushItem(sofa);
+      pushItem(tv);
+      pushItem(table);
+      if (room.width >= 14 && room.height >= 12) {
+        pushItem(dining);
+      }
     }
   }
   else if (room.type === "Kitchen") {
     const hasLeftDoor = (room.doors || []).some(d => d.wall === "left");
     if (!hasLeftDoor) {
-      items.push({ type: "kitchen-counter", w: 2, h: room.height - 1, x: 0.5, y: 0.5 });
+      pushItem({ type: "kitchen-counter", w: 2, h: room.height - 1, x: 0.5, y: 0.5 });
+      if (room.width >= 4.8) {
+        pushItem({ type: "fridge", w: 2, h: 2.2, x: room.width - 2.5, y: 0.6 });
+      }
     } else {
-      items.push({ type: "kitchen-counter", w: room.width - 1, h: 2, x: 0.5, y: 0.5 });
+      pushItem({ type: "kitchen-counter", w: room.width - 1, h: 2, x: 0.5, y: 0.5 });
+      if (room.height >= 4.8) {
+        pushItem({ type: "fridge", w: 2.2, h: 2, x: 0.6, y: room.height - 2.5 });
+      }
     }
   }
   else if (room.type.includes("Dining") || room.type === "Dining") {
-    if (area < 100) items.push({ type: "dining-4", w: 3, h: 3, x: (room.width - 3)/2, y: (room.height - 3)/2 });
-    else if (area < 150) items.push({ type: "dining-6", w: 5, h: 3, x: (room.width - 5)/2, y: (room.height - 3)/2 });
-    else items.push({ type: "dining-8", w: 7, h: 3, x: (room.width - 7)/2, y: (room.height - 3)/2 });
+    if (area < 100) pushItem({ type: "dining-4", w: 3, h: 3, x: (room.width - 3)/2, y: (room.height - 3)/2 });
+    else if (area < 150) pushItem({ type: "dining-6", w: 5, h: 3, x: (room.width - 5)/2, y: (room.height - 3)/2 });
+    else pushItem({ type: "dining-8", w: 7, h: 3, x: (room.width - 7)/2, y: (room.height - 3)/2 });
+  }
+  else if (room.type.includes("Bath") || room.type.includes("Toilet")) {
+    if (room.width >= 5 && room.height >= 5) {
+      const tubW = Math.min(room.width - 1, 4.6);
+      const tubH = Math.min(room.height - 1, 2.4);
+      pushItem({ type: "bathtub", w: tubW, h: tubH, x: (room.width - tubW) / 2, y: 0.5 });
+    } else if (room.width >= 4 && room.height >= 4) {
+      pushItem({ type: "shower-area", w: Math.min(2.8, room.width - 0.8), h: 2.2, x: 0.4, y: 0.4 });
+    }
+
+    if (room.width >= 3.2 && room.height >= 3.6) {
+      pushItem({ type: "sink", w: 1.6, h: 1.1, x: room.width - 2.0, y: room.height - 1.5 });
+    }
+
+    if (room.width >= 3.4 && room.height >= 4.2) {
+      pushItem({ type: "toilet-seat", w: 1.5, h: 2, x: 0.4, y: room.height - 2.4 });
+    }
+  }
+  else if (room.type === "Parking") {
+    if (room.width >= 9 && room.height >= 6) {
+      const carW = Math.min(room.width - 1.2, 8);
+      const carH = Math.min(room.height - 1.2, 4.2);
+      pushItem({ type: "car", w: carW, h: carH, x: (room.width - carW) / 2, y: (room.height - carH) / 2 });
+    }
+  }
+  else if (room.type === "Front Yard" || room.type === "Courtyard") {
+    if (room.width >= 5 && room.height >= 4) {
+      const pathW = Math.min(2.2, room.width - 1);
+      pushItem({ type: "pathway", w: pathW, h: room.height - 0.8, x: (room.width - pathW) / 2, y: 0.4 });
+      pushItem({ type: "planter", w: 1.1, h: 1.1, x: 0.4, y: 0.4 });
+      pushItem({ type: "planter", w: 1.1, h: 1.1, x: room.width - 1.5, y: 0.4 });
+    }
+    if (room.width >= 7 && room.height >= 5) {
+      pushItem({ type: "outdoor-bench", w: 3.2, h: 1.1, x: 0.5, y: room.height - 1.6 });
+      pushItem({ type: "planter", w: 1.2, h: 1.2, x: room.width - 1.6, y: room.height - 1.6 });
+    }
+  }
+  else if (room.type === "Entrance Porch" || room.type === "Entry Lobby") {
+    if (room.width >= 4.5 && room.height >= 3.5) {
+      pushItem({ type: "outdoor-bench", w: Math.min(3.6, room.width - 1), h: 1, x: 0.5, y: room.height - 1.4 });
+      pushItem({ type: "shoe-rack", w: Math.min(2.4, room.width - 1), h: 0.9, x: room.width - Math.min(2.4, room.width - 1) - 0.5, y: room.height - 1.3 });
+      pushItem({ type: "planter", w: 1, h: 1, x: 0.5, y: 0.5 });
+    }
+  }
+  else if (room.type === "Laundry" || room.type === "Back Utility") {
+    if (room.width >= 4.5 && room.height >= 3.5) {
+      pushItem({ type: "washing-machine", w: 2.2, h: 2.2, x: 0.5, y: 0.5 });
+      pushItem({ type: "sink", w: 1.6, h: 1.1, x: room.width - 2.1, y: 0.6 });
+    }
   }
 
   return items;
@@ -197,6 +348,109 @@ function FurniturePiece({ item, pxX, pxY }) {
         {(is8 || is4) && <Circle x={w} y={h/2} radius={chairR} fill={bg} stroke={strokeColor} strokeWidth={1} />}
       </Group>
     );
+  } else if (item.type === "tv-unit") {
+    return (
+      <Group x={x} y={y}>
+        <Rect width={w} height={h} fill="#e5e7eb" stroke={strokeColor} strokeWidth={1} cornerRadius={2} />
+        <Rect x={w * 0.1} y={h * 0.15} width={w * 0.8} height={h * 0.5} fill="#d1d5db" stroke={strokeColor} strokeWidth={1} cornerRadius={1} />
+        <Line points={[w * 0.5, h * 0.68, w * 0.5, h]} stroke={strokeColor} strokeWidth={1} />
+      </Group>
+    );
+  } else if (item.type === "center-table" || item.type === "coffee-table" || item.type === "vanity-table") {
+    return (
+      <Group x={x} y={y}>
+        <Rect width={w} height={h} fill="#e5e7eb" stroke={strokeColor} strokeWidth={1} cornerRadius={Math.min(4, h * 0.25)} />
+        <Line points={[w * 0.15, h * 0.5, w * 0.85, h * 0.5]} stroke={strokeColor} strokeWidth={1} opacity={0.55} />
+      </Group>
+    );
+  } else if (item.type === "study-table" || item.type === "outdoor-bench" || item.type === "shoe-rack") {
+    return (
+      <Group x={x} y={y}>
+        <Rect width={w} height={h} fill="#e5e7eb" stroke={strokeColor} strokeWidth={1} cornerRadius={Math.min(3, h * 0.28)} />
+        <Line points={[w * 0.1, h * 0.28, w * 0.9, h * 0.28]} stroke={strokeColor} strokeWidth={1} opacity={0.55} />
+      </Group>
+    );
+  } else if (item.type === "wardrobe") {
+    return (
+      <Group x={x} y={y}>
+        <Rect width={w} height={h} fill="#e5e7eb" stroke={strokeColor} strokeWidth={1} cornerRadius={2} />
+        <Line points={[w * 0.5, 0, w * 0.5, h]} stroke={strokeColor} strokeWidth={1} />
+        <Circle x={w * 0.44} y={h * 0.52} radius={Math.max(1, Math.min(w, h) * 0.06)} fill="#9ca3af" />
+        <Circle x={w * 0.56} y={h * 0.52} radius={Math.max(1, Math.min(w, h) * 0.06)} fill="#9ca3af" />
+      </Group>
+    );
+  } else if (item.type === "sink") {
+    return (
+      <Group x={x} y={y}>
+        <Rect width={w} height={h} fill="#e5e7eb" stroke={strokeColor} strokeWidth={1} cornerRadius={Math.min(5, h * 0.38)} />
+        <Circle x={w * 0.5} y={h * 0.58} radius={Math.max(1.2, Math.min(w, h) * 0.12)} fill="#cbd5e1" stroke={strokeColor} strokeWidth={0.8} />
+      </Group>
+    );
+  } else if (item.type === "toilet-seat") {
+    return (
+      <Group x={x} y={y}>
+        <Rect width={w} height={h * 0.26} fill="#d1d5db" stroke={strokeColor} strokeWidth={1} cornerRadius={2} />
+        <Rect x={w * 0.1} y={h * 0.2} width={w * 0.8} height={h * 0.72} fill="#e5e7eb" stroke={strokeColor} strokeWidth={1} cornerRadius={Math.min(6, h * 0.4)} />
+        <Rect x={w * 0.28} y={h * 0.4} width={w * 0.44} height={h * 0.36} fill="#f8fafc" stroke={strokeColor} strokeWidth={0.8} cornerRadius={Math.min(5, h * 0.2)} />
+      </Group>
+    );
+  } else if (item.type === "shower-area" || item.type === "pathway") {
+    return (
+      <Group x={x} y={y}>
+        <Rect
+          width={w}
+          height={h}
+          fill={item.type === "pathway" ? "#d6d3d1" : "#f1f5f9"}
+          stroke={strokeColor}
+          strokeWidth={1}
+          cornerRadius={2}
+        />
+        <Line points={[w * 0.12, h * 0.2, w * 0.88, h * 0.8]} stroke={strokeColor} strokeWidth={0.8} opacity={0.5} />
+        <Line points={[w * 0.88, h * 0.2, w * 0.12, h * 0.8]} stroke={strokeColor} strokeWidth={0.8} opacity={0.5} />
+      </Group>
+    );
+  } else if (item.type === "planter") {
+    return (
+      <Group x={x} y={y}>
+        <Circle x={w * 0.5} y={h * 0.42} radius={Math.min(w, h) * 0.34} fill="#86a98a" stroke={strokeColor} strokeWidth={0.9} />
+        <Rect x={w * 0.2} y={h * 0.66} width={w * 0.6} height={h * 0.24} fill="#d6d3d1" stroke={strokeColor} strokeWidth={0.9} cornerRadius={2} />
+      </Group>
+    );
+  } else if (item.type === "washing-machine") {
+    return (
+      <Group x={x} y={y}>
+        <Rect width={w} height={h} fill="#e5e7eb" stroke={strokeColor} strokeWidth={1} cornerRadius={2} />
+        <Circle x={w * 0.5} y={h * 0.55} radius={Math.min(w, h) * 0.24} fill="#f8fafc" stroke={strokeColor} strokeWidth={0.9} />
+        <Rect x={w * 0.12} y={h * 0.1} width={w * 0.76} height={h * 0.16} fill="#cbd5e1" stroke={strokeColor} strokeWidth={0.8} cornerRadius={1} />
+      </Group>
+    );
+  } else if (item.type === "fridge") {
+    return (
+      <Group x={x} y={y}>
+        <Rect width={w} height={h} fill="#e5e7eb" stroke={strokeColor} strokeWidth={1} cornerRadius={2} />
+        <Line points={[0, h * 0.52, w, h * 0.52]} stroke={strokeColor} strokeWidth={1} />
+        <Line points={[w * 0.74, h * 0.15, w * 0.74, h * 0.44]} stroke={strokeColor} strokeWidth={1} />
+        <Line points={[w * 0.26, h * 0.62, w * 0.26, h * 0.9]} stroke={strokeColor} strokeWidth={1} />
+      </Group>
+    );
+  } else if (item.type === "bathtub") {
+    return (
+      <Group x={x} y={y}>
+        <Rect width={w} height={h} fill="#e5e7eb" stroke={strokeColor} strokeWidth={1} cornerRadius={Math.min(h * 0.45, 8)} />
+        <Rect x={w * 0.12} y={h * 0.2} width={w * 0.76} height={h * 0.6} fill="#f8fafc" stroke={strokeColor} strokeWidth={0.9} cornerRadius={Math.min(h * 0.34, 6)} />
+        <Circle x={w * 0.82} y={h * 0.5} radius={Math.min(w, h) * 0.08} fill="#cbd5e1" stroke={strokeColor} strokeWidth={0.8} />
+      </Group>
+    );
+  } else if (item.type === "car") {
+    const wheelRadius = Math.max(2.2, Math.min(w, h) * 0.12);
+    return (
+      <Group x={x} y={y}>
+        <Rect x={w * 0.08} y={h * 0.2} width={w * 0.84} height={h * 0.52} fill="#e5e7eb" stroke={strokeColor} strokeWidth={1} cornerRadius={Math.min(8, h * 0.22)} />
+        <Rect x={w * 0.26} y={h * 0.28} width={w * 0.48} height={h * 0.26} fill="#cbd5e1" stroke={strokeColor} strokeWidth={0.9} cornerRadius={Math.min(6, h * 0.16)} />
+        <Circle x={w * 0.24} y={h * 0.8} radius={wheelRadius} fill="#f8fafc" stroke={strokeColor} strokeWidth={1} />
+        <Circle x={w * 0.76} y={h * 0.8} radius={wheelRadius} fill="#f8fafc" stroke={strokeColor} strokeWidth={1} />
+      </Group>
+    );
   } else {
     return (
       <Group x={x} y={y}>
@@ -224,6 +478,18 @@ function formatPlotSize(value) {
 
   if (inches === 0) return `${feet} ft`;
   return `${feet} ft ${inches} in`;
+}
+
+function formatFeet(value) {
+  return `${Number(value).toFixed(1)} ft`;
+}
+
+function fitTextToWidth(text, maxWidthPx, fontSize) {
+  if (!text) return "";
+  const approxCharWidth = Math.max(5, fontSize * 0.62);
+  const maxChars = Math.max(3, Math.floor(maxWidthPx / approxCharWidth));
+  if (text.length <= maxChars) return text;
+  return `${text.slice(0, Math.max(1, maxChars - 1))}…`;
 }
 
 function detectTexture(roomType) {
@@ -270,7 +536,7 @@ function roomTextureLines(texture, roomWidthPx, roomHeightPx) {
           key={`plank-${y}`}
           listening={false}
           points={[0, y, roomWidthPx, y]}
-          stroke="#b89d7f"
+          stroke="rgba(122, 124, 111, 0.28)"
           strokeWidth={0.85}
           opacity={0.6}
         />,
@@ -289,7 +555,7 @@ function roomTextureLines(texture, roomWidthPx, roomHeightPx) {
           key={`tile-x-${x}`}
           listening={false}
           points={[x, 0, x, roomHeightPx]}
-          stroke="#8ca6b0"
+          stroke="rgba(178, 179, 165, 0.5)"
           strokeWidth={0.75}
           opacity={0.55}
         />,
@@ -302,7 +568,7 @@ function roomTextureLines(texture, roomWidthPx, roomHeightPx) {
           key={`tile-y-${y}`}
           listening={false}
           points={[0, y, roomWidthPx, y]}
-          stroke="#8ca6b0"
+          stroke="rgba(178, 179, 165, 0.5)"
           strokeWidth={0.75}
           opacity={0.55}
         />,
@@ -321,7 +587,7 @@ function roomTextureLines(texture, roomWidthPx, roomHeightPx) {
           key={`carpet-${i}`}
           listening={false}
           points={[i, roomHeightPx, i + roomHeightPx, 0]}
-          stroke="#baa996"
+          stroke="rgba(160, 151, 135, 0.32)"
           strokeWidth={0.7}
           opacity={0.5}
         />,
@@ -339,7 +605,7 @@ function roomTextureLines(texture, roomWidthPx, roomHeightPx) {
           key={`garden-a-${i}`}
           listening={false}
           points={[i, 0, i + roomHeightPx, roomHeightPx]}
-          stroke="#7e9d73"
+          stroke="rgba(75, 101, 81, 0.22)"
           strokeWidth={0.7}
           opacity={0.32}
         />,
@@ -349,7 +615,7 @@ function roomTextureLines(texture, roomWidthPx, roomHeightPx) {
           key={`garden-b-${i}`}
           listening={false}
           points={[i, roomHeightPx, i + roomHeightPx, 0]}
-          stroke="#7e9d73"
+          stroke="rgba(75, 101, 81, 0.22)"
           strokeWidth={0.7}
           opacity={0.32}
         />,
@@ -361,35 +627,84 @@ function roomTextureLines(texture, roomWidthPx, roomHeightPx) {
   return null;
 }
 
-function getRoomPresentationStyle(room, isPresentationMode, isSelected, isOverlapping) {
+function getRoomPresentationStyle(room, isPresentationMode, isSelected, isOverlapping, isDarkTheme) {
   const roomType = room.type || room.roomType || "";
 
-  if (!isPresentationMode) {
+  if (!isPresentationMode && !isDarkTheme) {
+    let fill = "rgba(239, 238, 227, 0.88)";
+    if (roomType.includes("Hall") || roomType.includes("Living") || roomType.includes("Dining")) fill = "rgba(202, 233, 231, 0.55)";
+    else if (roomType.includes("Kitchen")) fill = "rgba(202, 233, 231, 0.46)";
+    else if (roomType.includes("Bath") || roomType.includes("Toilet") || roomType.includes("Shaft")) fill = "rgba(227, 228, 212, 0.72)";
+    else if (roomType.includes("Bedroom") || roomType.includes("Guest")) fill = "rgba(230, 226, 216, 0.82)";
+
+    if (isSelected) fill = "rgba(188, 218, 217, 0.65)";
+    if (isOverlapping) fill = "rgba(255, 116, 106, 0.3)";
+
     return {
-      fill: isSelected ? "#fef3c7" : getRoomColor(room),
-      wallStroke: isOverlapping ? "#ef4444" : (isSelected ? "#b45309" : "#111827"),
-      labelColor: "#111827",
-      dimensionColor: "#4b5563",
+      fill,
+      wallStroke: isOverlapping ? "#9f403d" : (isSelected ? "#476362" : "#5e6054"),
+      labelColor: isSelected ? "#284443" : "#313429",
+      dimensionColor: "#5e6054",
       texture: "none",
     };
   }
 
-  let fill = "#f2ecdf";
-  if (roomType.includes("Hall") || roomType.includes("Living") || roomType.includes("Dining")) fill = "#d8c4a5";
-  else if (roomType.includes("Kitchen")) fill = "#d9cab6";
-  else if (roomType.includes("Bath") || roomType.includes("Toilet") || roomType.includes("Shaft")) fill = "#d9e4e8";
-  else if (roomType.includes("Bedroom") || roomType.includes("Guest")) fill = "#e6ded0";
-  else if (roomType.includes("Yard") || roomType.includes("Balcony") || roomType.includes("Courtyard")) fill = "#d6e2c9";
-  else if (roomType.includes("Parking")) fill = "#d0d4d8";
+  if (!isPresentationMode && isDarkTheme) {
+    let fill = "rgba(40, 44, 46, 0.78)";
+    if (roomType.includes("Hall") || roomType.includes("Living") || roomType.includes("Dining")) fill = "rgba(0, 229, 255, 0.12)";
+    else if (roomType.includes("Kitchen")) fill = "rgba(0, 229, 255, 0.09)";
+    else if (roomType.includes("Bath") || roomType.includes("Toilet") || roomType.includes("Shaft")) fill = "rgba(206, 214, 219, 0.15)";
+    else if (roomType.includes("Bedroom") || roomType.includes("Guest")) fill = "rgba(94, 104, 110, 0.28)";
 
-  if (isSelected) fill = "#f4e1b0";
-  if (isOverlapping) fill = "#f7cccc";
+    if (isSelected) fill = "rgba(0, 229, 255, 0.2)";
+    if (isOverlapping) fill = "rgba(255, 116, 106, 0.3)";
+
+    return {
+      fill,
+      wallStroke: isOverlapping ? "#ff8a80" : (isSelected ? "#00e5ff" : "#c6d6da"),
+      labelColor: isSelected ? "#c6fbff" : "#d9e4e7",
+      dimensionColor: "#8ea6ad",
+      texture: "none",
+    };
+  }
+
+  if (isDarkTheme) {
+    let fill = "rgba(34, 38, 39, 0.82)";
+    if (roomType.includes("Hall") || roomType.includes("Living") || roomType.includes("Dining")) fill = "rgba(0, 229, 255, 0.15)";
+    else if (roomType.includes("Kitchen")) fill = "rgba(0, 229, 255, 0.11)";
+    else if (roomType.includes("Bath") || roomType.includes("Toilet") || roomType.includes("Shaft")) fill = "rgba(184, 200, 206, 0.2)";
+    else if (roomType.includes("Bedroom") || roomType.includes("Guest")) fill = "rgba(93, 110, 116, 0.28)";
+    else if (roomType.includes("Yard") || roomType.includes("Balcony") || roomType.includes("Courtyard")) fill = "rgba(88, 121, 126, 0.25)";
+    else if (roomType.includes("Parking")) fill = "rgba(88, 95, 99, 0.32)";
+
+    if (isSelected) fill = "rgba(0, 229, 255, 0.23)";
+    if (isOverlapping) fill = "rgba(255, 116, 106, 0.35)";
+
+    return {
+      fill,
+      wallStroke: isOverlapping ? "#ff8a80" : (isSelected ? "#00e5ff" : "#c6d6da"),
+      labelColor: isSelected ? "#dcfbff" : "#d9e4e7",
+      dimensionColor: "#8ea6ad",
+      texture: detectTexture(roomType),
+    };
+  }
+
+  let fill = "rgba(239, 238, 227, 0.92)";
+  if (roomType.includes("Hall") || roomType.includes("Living") || roomType.includes("Dining")) fill = "rgba(215, 246, 220, 0.58)";
+  else if (roomType.includes("Kitchen")) fill = "rgba(202, 233, 231, 0.55)";
+  else if (roomType.includes("Bath") || roomType.includes("Toilet") || roomType.includes("Shaft")) fill = "rgba(227, 228, 212, 0.82)";
+  else if (roomType.includes("Bedroom") || roomType.includes("Guest")) fill = "rgba(230, 226, 216, 0.86)";
+  else if (roomType.includes("Yard") || roomType.includes("Balcony") || roomType.includes("Courtyard")) fill = "rgba(201, 231, 206, 0.62)";
+  else if (roomType.includes("Parking")) fill = "rgba(227, 228, 212, 0.72)";
+
+  if (isSelected) fill = "rgba(188, 218, 217, 0.72)";
+  if (isOverlapping) fill = "rgba(255, 116, 106, 0.35)";
 
   return {
     fill,
-    wallStroke: isOverlapping ? "#b91c1c" : "#2a2015",
-    labelColor: "#2f2518",
-    dimensionColor: "#5a4a38",
+    wallStroke: isOverlapping ? "#9f403d" : (isSelected ? "#476362" : "#5e6054"),
+    labelColor: isSelected ? "#284443" : "#313429",
+    dimensionColor: "#5e6054",
     texture: detectTexture(roomType),
   };
 }
@@ -400,6 +715,19 @@ function clamp(value, min, max) {
 
 function snapToGrid(value) {
   return Math.round(value / GRID_SIZE) * GRID_SIZE;
+}
+
+function intervalsOverlap(startA, endA, startB, endB, tolerance = GRID_SIZE * 0.5) {
+  return Math.min(endA, endB) - Math.max(startA, startB) > tolerance;
+}
+
+function roomsOverlap(a, b, overlapTolerance = 0.5) {
+  return (
+    a.x < b.x + b.width - overlapTolerance &&
+    a.x + a.width > b.x + overlapTolerance &&
+    a.y < b.y + b.height - overlapTolerance &&
+    a.y + a.height > b.y + overlapTolerance
+  );
 }
 
 function normalizePlotGrid(plotWidth, plotHeight) {
@@ -492,19 +820,54 @@ function normalizeIncomingRooms(initialRooms) {
     return [];
   }
 
+  const usedIds = new Set();
+  const toSafeString = (value) => String(value ?? "").trim();
+  const makeUniqueRoomId = (candidateId, index) => {
+    const baseId = toSafeString(candidateId) || `room-${index + 1}`;
+    let nextId = baseId;
+    let suffix = 2;
+
+    while (usedIds.has(nextId)) {
+      nextId = `${baseId}-${suffix}`;
+      suffix += 1;
+    }
+
+    usedIds.add(nextId);
+    return nextId;
+  };
+
   return sortRoomsWithHallBase(
-    initialRooms.map((room, index) => ({
-      id: String(room.id ?? room.roomId ?? room.type ?? room.roomType ?? `room-${index + 1}`),
-      label: room.label ?? room.roomType ?? room.type ?? `Room ${index + 1}`,
-      type: room.type ?? room.roomType ?? room.label ?? `Room ${index + 1}`,
-      roomType: room.roomType ?? room.type ?? room.label ?? `Room ${index + 1}`,
-      x: Number(room.x) || 0,
-      y: Number(room.y) || 0,
-      width: Number(room.width) || 0,
-      height: Number(room.height) || 0,
-      doors: Array.isArray(room.doors) ? room.doors : [],
-      windows: Array.isArray(room.windows) ? room.windows : [],
-    })),
+    initialRooms.map((room, index) => {
+      const fallbackName = `Room ${index + 1}`;
+      const normalizedType =
+        toSafeString(room?.type) ||
+        toSafeString(room?.roomType) ||
+        toSafeString(room?.label) ||
+        fallbackName;
+      const normalizedRoomType =
+        toSafeString(room?.roomType) ||
+        toSafeString(room?.type) ||
+        toSafeString(room?.label) ||
+        fallbackName;
+      const normalizedLabel =
+        toSafeString(room?.label) ||
+        toSafeString(room?.roomType) ||
+        toSafeString(room?.type) ||
+        fallbackName;
+
+      return {
+        id: makeUniqueRoomId(room?.id ?? room?.roomId ?? room?.type ?? room?.roomType, index),
+        label: normalizedLabel,
+        type: normalizedType,
+        roomType: normalizedRoomType,
+        x: Number(room?.x) || 0,
+        y: Number(room?.y) || 0,
+        width: Number(room?.width) || 0,
+        height: Number(room?.height) || 0,
+        doors: Array.isArray(room?.doors) ? room.doors : [],
+        windows: Array.isArray(room?.windows) ? room.windows : [],
+      };
+    }),
   );
 }
 
@@ -724,7 +1087,7 @@ function getElementPixelRect(element, room, plotWidth, plotHeight, stageWidth, s
 
 
 /* ── Compass component ── */
-function CompassIndicator({ frontDirection, stageWidth }) {
+function CompassIndicator({ frontDirection, stageWidth, isDarkTheme, showFrontLabel = true }) {
   const size = 40;
   const margin = 12;
   const cx = stageWidth - size / 2 - margin;
@@ -748,8 +1111,8 @@ function CompassIndicator({ frontDirection, stageWidth }) {
         width={size}
         height={size}
         cornerRadius={size / 2}
-        fill="rgba(255,255,255,0.92)"
-        stroke="#78716c"
+        fill={isDarkTheme ? "rgba(32, 36, 37, 0.9)" : "rgba(251, 249, 242, 0.94)"}
+        stroke={isDarkTheme ? "#7faeb8" : "#7a7c6f"}
         strokeWidth={1}
       />
       {/* N label */}
@@ -760,13 +1123,13 @@ function CompassIndicator({ frontDirection, stageWidth }) {
         fontSize={8}
         fontFamily="sans-serif"
         fontStyle="bold"
-        fill="#111"
+        fill={isDarkTheme ? "#d6f3f8" : "#313429"}
         listening={false}
       />
       {/* Arrow line */}
       <Line
         points={[cx, cy, ax, ay]}
-        stroke="#16a34a"
+        stroke={isDarkTheme ? "#00e5ff" : "#476362"}
         strokeWidth={2.5}
         lineCap="round"
       />
@@ -777,26 +1140,27 @@ function CompassIndicator({ frontDirection, stageWidth }) {
         width={4}
         height={4}
         cornerRadius={2}
-        fill="#111"
+        fill={isDarkTheme ? "#d6f3f8" : "#313429"}
       />
-      {/* Front label */}
-      <Text
-        x={cx - size / 2}
-        y={cy + size / 2 + 2}
-        width={size}
-        text={`Front: ${frontDirection.charAt(0).toUpperCase() + frontDirection.slice(1)}`}
-        fontSize={7}
-        fontFamily="sans-serif"
-        fill="#78716c"
-        align="center"
-        listening={false}
-      />
+      {showFrontLabel && (
+        <Text
+          x={cx - size / 2}
+          y={cy + size / 2 + 2}
+          width={size}
+          text={`Front: ${frontDirection.charAt(0).toUpperCase() + frontDirection.slice(1)}`}
+          fontSize={7}
+          fontFamily="Inter, sans-serif"
+          fill={isDarkTheme ? "#9ab8bf" : "#5e6054"}
+          align="center"
+          listening={false}
+        />
+      )}
     </Group>
   );
 }
 
 /* ── Plot Boundary Overlay ── */
-function PlotBoundaryOverlay({ boundaries, stageWidth, stageHeight }) {
+function PlotBoundaryOverlay({ boundaries, stageWidth, stageHeight, isDarkTheme }) {
   const edges = {
     north: { points: [0, 0, stageWidth, 0] },
     south: { points: [0, stageHeight, stageWidth, stageHeight] },
@@ -808,15 +1172,15 @@ function PlotBoundaryOverlay({ boundaries, stageWidth, stageHeight }) {
     <Group listening={false}>
       {Object.entries(boundaries).map(([dir, status]) => {
         const { points } = edges[dir];
-        let stroke = "#d1d5db"; // default covered
+        let stroke = isDarkTheme ? "rgba(154, 184, 191, 0.45)" : "rgba(122, 124, 111, 0.45)";
         let strokeW = 4;
         let dash = [];
 
         if (status === "front") {
-          stroke = "#16a34a"; // green
+          stroke = isDarkTheme ? "#00e5ff" : "#476362";
           dash = [8, 4];
         } else if (status === "open") {
-          stroke = "#3b82f6"; // blue
+          stroke = isDarkTheme ? "#67f3ff" : "#4e6954";
           dash = [4, 4];
           strokeW = 2;
         } else {
@@ -842,18 +1206,23 @@ function GridFloorPlanEditor({
   frontDirection = "south",
   dwellingType = "house",
   boundaries = { north: "covered", south: "front", east: "open", west: "covered" },
+  themeMode = "light",
 }) {
+  const isDarkTheme = themeMode === "dark";
   const [rooms, setRooms] = useState(() => normalizeIncomingRooms(initialRooms));
   const [selectedId, setSelectedId] = useState(null);
   const [isTransforming, setIsTransforming] = useState(false);
+  const [draggingRoomId, setDraggingRoomId] = useState(null);
   const [showFurniture, setShowFurniture] = useState(false);
   const [isPresentationMode, setIsPresentationMode] = useState(false);
   const [stageWidth, setStageWidth] = useState(960);
   const [copyFeedback, setCopyFeedback] = useState(null);
+  const [editorToast, setEditorToast] = useState("");
   const wrapperRef = useRef(null);
   const transformerRef = useRef(null);
   const groupRefs = useRef(new Map());
   const shapeRefs = useRef(new Map());
+  const toastTimeoutRef = useRef(null);
 
   /* Counter for generating unique IDs when adding rooms manually */
   const addCounterRef = useRef(0);
@@ -864,6 +1233,161 @@ function GridFloorPlanEditor({
     () => normalizePlotGrid(plotWidth, plotHeight),
     [plotHeight, plotWidth],
   );
+
+  const resolveDraggedRoomPosition = (movingRoom, rawX, rawY, currentRooms) => {
+    const maxX = Math.max(0, plotWidth - movingRoom.width);
+    const maxY = Math.max(0, plotHeight - movingRoom.height);
+    const snapAndClampX = (value) => snapToGrid(clamp(value, 0, maxX));
+    const snapAndClampY = (value) => snapToGrid(clamp(value, 0, maxY));
+
+    let candidate = {
+      x: snapAndClampX(rawX),
+      y: snapAndClampY(rawY),
+    };
+
+    // Keep hall movement unconstrained by overlap checks, matching current UX rules.
+    if (isHall(movingRoom)) {
+      return candidate;
+    }
+
+    const otherRooms = currentRooms.filter((entry) => entry.id !== movingRoom.id && !isHall(entry));
+    if (otherRooms.length === 0) {
+      return candidate;
+    }
+
+    // If close enough to a neighbor wall, dock exactly edge-to-edge to remove tiny gaps.
+    const EDGE_DOCK_THRESHOLD = GRID_SIZE;
+    const xTargets = [];
+    const yTargets = [];
+
+    for (const other of otherRooms) {
+      if (
+        intervalsOverlap(
+          candidate.y,
+          candidate.y + movingRoom.height,
+          other.y,
+          other.y + other.height,
+        )
+      ) {
+        xTargets.push(snapAndClampX(other.x - movingRoom.width));
+        xTargets.push(snapAndClampX(other.x + other.width));
+      }
+
+      if (
+        intervalsOverlap(
+          candidate.x,
+          candidate.x + movingRoom.width,
+          other.x,
+          other.x + other.width,
+        )
+      ) {
+        yTargets.push(snapAndClampY(other.y - movingRoom.height));
+        yTargets.push(snapAndClampY(other.y + other.height));
+      }
+    }
+
+    const nearestDock = (value, targets, threshold) => {
+      let nearest = null;
+      let bestDistance = Number.POSITIVE_INFINITY;
+
+      for (const target of targets) {
+        const distance = Math.abs(target - value);
+        if (distance <= threshold && distance < bestDistance) {
+          nearest = target;
+          bestDistance = distance;
+        }
+      }
+
+      return nearest;
+    };
+
+    const dockedX = nearestDock(candidate.x, xTargets, EDGE_DOCK_THRESHOLD);
+    if (dockedX !== null) {
+      candidate.x = dockedX;
+    }
+
+    const dockedY = nearestDock(candidate.y, yTargets, EDGE_DOCK_THRESHOLD);
+    if (dockedY !== null) {
+      candidate.y = dockedY;
+    }
+
+    const candidateRoom = {
+      x: candidate.x,
+      y: candidate.y,
+      width: movingRoom.width,
+      height: movingRoom.height,
+    };
+    const hasOverlap = otherRooms.some((other) => roomsOverlap(candidateRoom, other));
+    if (!hasOverlap) {
+      return candidate;
+    }
+
+    // If overlap remains, move to the nearest non-overlapping edge-aligned slot.
+    const positions = [];
+    const seen = new Set();
+    const pushPosition = (x, y) => {
+      const nextX = snapAndClampX(x);
+      const nextY = snapAndClampY(y);
+      const key = `${nextX}|${nextY}`;
+      if (seen.has(key)) return;
+      seen.add(key);
+      positions.push({ x: nextX, y: nextY });
+    };
+
+    pushPosition(candidate.x, candidate.y);
+
+    for (const other of otherRooms) {
+      const xEdges = [other.x - movingRoom.width, other.x + other.width];
+      const yEdges = [other.y - movingRoom.height, other.y + other.height];
+
+      for (const nextX of xEdges) {
+        pushPosition(nextX, candidate.y);
+      }
+
+      for (const nextY of yEdges) {
+        pushPosition(candidate.x, nextY);
+      }
+
+      for (const nextX of xEdges) {
+        for (const nextY of yEdges) {
+          pushPosition(nextX, nextY);
+        }
+      }
+    }
+
+    let bestPosition = candidate;
+    let bestDistance = Number.POSITIVE_INFINITY;
+
+    for (const position of positions) {
+      const moved = {
+        x: position.x,
+        y: position.y,
+        width: movingRoom.width,
+        height: movingRoom.height,
+      };
+      const overlaps = otherRooms.some((other) => roomsOverlap(moved, other));
+      if (overlaps) continue;
+
+      const distance = Math.abs(position.x - candidate.x) + Math.abs(position.y - candidate.y);
+      if (distance < bestDistance) {
+        bestDistance = distance;
+        bestPosition = position;
+      }
+    }
+
+    return bestPosition;
+  };
+  
+    const updateRoom = (roomId, nextPartial) => {
+      setRooms((currentRooms) =>
+        currentRooms.map((room) => (room.id === roomId ? { ...room, ...nextPartial } : room)),
+      );
+    };
+  
+    const updateSelectedRoomLabel = (nextLabel) => {
+      if (!selectedId) return;
+      updateRoom(selectedId, { label: nextLabel });
+    };
 
   useEffect(() => {
     if (!wrapperRef.current) {
@@ -880,6 +1404,32 @@ function GridFloorPlanEditor({
 
     observer.observe(wrapperRef.current);
     return () => observer.disconnect();
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (toastTimeoutRef.current) {
+        clearTimeout(toastTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    if (typeof document === "undefined") {
+      return undefined;
+    }
+
+    const handleOutsideStagePointerDown = (event) => {
+      const stageContainer = wrapperRef.current?.querySelector(".konvajs-content");
+      if (!stageContainer) return;
+      if (stageContainer.contains(event.target)) return;
+      setSelectedId(null);
+    };
+
+    document.addEventListener("pointerdown", handleOutsideStagePointerDown);
+    return () => {
+      document.removeEventListener("pointerdown", handleOutsideStagePointerDown);
+    };
   }, []);
 
   const stageHeight = Math.round(stageWidth * (plotHeight / plotWidth));
@@ -909,6 +1459,37 @@ function GridFloorPlanEditor({
     };
   }, [boundaries, plotHeight, plotWidth, rooms]);
 
+  const overlappingRoomIds = useMemo(() => {
+    const overlapping = new Set();
+
+    for (let i = 0; i < rooms.length; i += 1) {
+      for (let j = i + 1; j < rooms.length; j += 1) {
+        const first = rooms[i];
+        const second = rooms[j];
+        if (isHall(first) || isHall(second)) continue;
+
+        if (roomsOverlap(first, second)) {
+          overlapping.add(first.id);
+          overlapping.add(second.id);
+        }
+      }
+    }
+
+    return overlapping;
+  }, [rooms]);
+
+  const furnitureByRoomId = useMemo(() => {
+    if (!showFurniture) return new Map();
+
+    const nextMap = new Map();
+    for (const room of rooms) {
+      nextMap.set(room.id, placeFurniture(room));
+    }
+    return nextMap;
+  }, [rooms, showFurniture]);
+
+  const isEditingDragInProgress = !isPresentationMode && draggingRoomId !== null;
+
   useEffect(() => {
     if (isPresentationMode && !showFurniture) {
       setShowFurniture(true);
@@ -922,6 +1503,7 @@ function GridFloorPlanEditor({
     setRooms(normalizeIncomingRooms(initialRooms));
     setSelectedId(null);
     setIsTransforming(false);
+    setDraggingRoomId(null);
   }, [initialRooms]);
 
   useEffect(() => {
@@ -972,41 +1554,43 @@ function GridFloorPlanEditor({
 
   const gridLines = useMemo(() => {
     const lines = [];
+    const majorStroke = isDarkTheme
+      ? (isPresentationMode ? "rgba(137, 205, 217, 0.18)" : "rgba(156, 240, 255, 0.2)")
+      : (isPresentationMode ? "rgba(122, 124, 111, 0.24)" : "rgba(122, 124, 111, 0.16)");
+    const minorStroke = isDarkTheme
+      ? (isPresentationMode ? "rgba(137, 205, 217, 0.055)" : "rgba(156, 240, 255, 0.07)")
+      : (isPresentationMode ? "rgba(178, 179, 165, 0.16)" : "rgba(178, 179, 165, 0.09)");
 
     for (let column = 0; column <= grid.columns; column += 1) {
+      if (isPresentationMode && column % 4 !== 0) continue;
       const x = column * cellWidth;
       lines.push(
         <Line
           key={`column-${column}`}
           listening={false}
           points={[x, 0, x, stageHeight]}
-          stroke={column % 16 === 0 ? "#c9c9c9" : "#e7e7e7"}
-          strokeWidth={column % 16 === 0 ? 0.8 : 0.35}
+          stroke={column % 16 === 0 ? majorStroke : minorStroke}
+          strokeWidth={column % 16 === 0 ? 0.95 : 0.45}
         />,
       );
     }
 
     for (let row = 0; row <= grid.rows; row += 1) {
+      if (isPresentationMode && row % 4 !== 0) continue;
       const y = row * cellHeight;
       lines.push(
         <Line
           key={`row-${row}`}
           listening={false}
           points={[0, y, stageWidth, y]}
-          stroke={row % 16 === 0 ? "#c9c9c9" : "#e7e7e7"}
-          strokeWidth={row % 16 === 0 ? 0.8 : 0.35}
+          stroke={row % 16 === 0 ? majorStroke : minorStroke}
+          strokeWidth={row % 16 === 0 ? 0.95 : 0.45}
         />,
       );
     }
 
     return lines;
-  }, [cellHeight, cellWidth, grid.columns, grid.rows, stageHeight, stageWidth]);
-
-  const updateRoom = (roomId, nextPartial) => {
-    setRooms((currentRooms) =>
-      currentRooms.map((room) => (room.id === roomId ? { ...room, ...nextPartial } : room)),
-    );
-  };
+  }, [cellHeight, cellWidth, grid.columns, grid.rows, isDarkTheme, isPresentationMode, stageHeight, stageWidth]);
 
   const activateRoom = (roomId) => {
     setSelectedId(roomId);
@@ -1020,6 +1604,19 @@ function GridFloorPlanEditor({
   const bindShapeRef = (roomId, node) => {
     if (!node) shapeRefs.current.delete(roomId);
     else shapeRefs.current.set(roomId, node);
+  };
+
+  const showEditorToast = (message) => {
+    setEditorToast(message);
+
+    if (toastTimeoutRef.current) {
+      clearTimeout(toastTimeoutRef.current);
+    }
+
+    toastTimeoutRef.current = setTimeout(() => {
+      setEditorToast("");
+      toastTimeoutRef.current = null;
+    }, 2600);
   };
 
   /* ── Add Room handler ── */
@@ -1172,8 +1769,8 @@ function GridFloorPlanEditor({
     // Only allow windows on ventilation walls
     const ventWalls = getVentilationWalls(room, rooms, plotWidth, plotHeight, boundaries);
     if (ventWalls.length === 0) {
-      alert("No valid ventilation wall available. Place this room against an open boundary, a Shaft, or a Balcony.");
-      return; 
+      showEditorToast("No valid ventilation wall available. Place this room against an open boundary, a Shaft, or a Balcony.");
+      return;
     }
 
     // Pick one that doesn't already have a window
@@ -1406,38 +2003,43 @@ function GridFloorPlanEditor({
     <div className={`editor-shell ${isPresentationMode ? "presentation-sheet" : ""}`}>
       <div className="furniture-toggle-container">
         <button 
-          className={`furniture-toggle-btn ${!isPresentationMode ? 'active' : ''}`}
+          className={`furniture-toggle-btn mode-toggle-btn mode-left-btn ${!isPresentationMode ? 'active' : ''}`}
           onClick={() => setIsPresentationMode(false)}
         >
-          Edit Mode
+          Edit
         </button>
         <button 
-          className={`furniture-toggle-btn ${isPresentationMode ? 'active' : ''}`}
+          className={`furniture-toggle-btn mode-toggle-btn mode-right-btn ${isPresentationMode ? 'active' : ''}`}
           onClick={() => {
             setIsPresentationMode(true);
             setSelectedId(null);
           }}
         >
-          Presentation Mode
+          Present
         </button>
         <button 
-          className={`furniture-toggle-btn ${showFurniture ? 'active' : ''}`}
+          className={`furniture-toggle-btn toolbar-furniture-btn ${showFurniture ? 'active' : ''}`}
           onClick={() => setShowFurniture(!showFurniture)}
         >
-          {showFurniture ? "🪑 Hide Furniture" : "🪑 Show Furniture"}
+          {showFurniture ? "Furniture On" : "Furniture Off"}
         </button>
       </div>
+      {editorToast ? (
+        <div className="editor-toast" role="status" aria-live="polite">
+          {editorToast}
+        </div>
+      ) : null}
       {isPresentationMode && (
         <div className="presentation-header">
-          <h3>The Modernist Residence</h3>
+          <h3>{isDarkTheme ? "MONOLITH CAD // PRESENTATION" : "ArchAI // Atelier Presentation"}</h3>
           <p>
-            {formatPlotSize(plotWidth)} x {formatPlotSize(plotHeight)} | Front: {toTitleCase(frontDirection)} | {planSummary.totalAreaSqFt} sq ft
+            {formatPlotSize(plotWidth)} x {formatPlotSize(plotHeight)} | {planSummary.totalAreaSqFt} sq ft
           </p>
         </div>
       )}
       <div
         className={`editor-canvas ${isPresentationMode ? "presentation-canvas" : ""}`}
-        onClick={(event) => {
+        onMouseDown={(event) => {
           if (event.target === event.currentTarget) {
             setSelectedId(null);
           }
@@ -1461,7 +2063,7 @@ function GridFloorPlanEditor({
         >
           <Layer listening={false}>
             <Rect
-              fill={isPresentationMode ? "#f0e8da" : "#ffffff"}
+              fill={isDarkTheme ? (isPresentationMode ? "#171a1b" : "#121416") : (isPresentationMode ? "#fbf9f2" : "#f5f4eb")}
               height={stageHeight}
               width={stageWidth}
               x={0}
@@ -1474,101 +2076,22 @@ function GridFloorPlanEditor({
                   y={8}
                   width={stageWidth - 16}
                   height={stageHeight - 16}
-                  stroke="#4f4335"
+                  stroke={isDarkTheme ? "rgba(0, 229, 255, 0.45)" : "rgba(122, 124, 111, 0.5)"}
                   strokeWidth={1.8}
-                  listening={false}
-                />
-                <Text
-                  x={20}
-                  y={16}
-                  text="RESIDENTIAL PLAN"
-                  fontFamily="Cinzel, serif"
-                  fontSize={15}
-                  fontStyle="bold"
-                  fill="#33291f"
-                  listening={false}
-                />
-                <Rect
-                  x={stageWidth - 230}
-                  y={18}
-                  width={208}
-                  height={120}
-                  fill="rgba(255, 251, 245, 0.92)"
-                  stroke="#7f6f5a"
-                  strokeWidth={1}
-                  listening={false}
-                />
-                <Text
-                  x={stageWidth - 220}
-                  y={28}
-                  width={188}
-                  text="LEGEND"
-                  fontFamily="Cinzel, serif"
-                  fontSize={12}
-                  fontStyle="bold"
-                  fill="#33291f"
-                  listening={false}
-                />
-                <Text
-                  x={stageWidth - 220}
-                  y={47}
-                  width={188}
-                  text={`Rooms: ${planSummary.roomCount}`}
-                  fontFamily="Manrope, sans-serif"
-                  fontSize={10}
-                  fill="#4f4438"
-                  listening={false}
-                />
-                <Text
-                  x={stageWidth - 220}
-                  y={62}
-                  width={188}
-                  text={`Bedrooms: ${planSummary.bedrooms} | Baths: ${planSummary.bathrooms}`}
-                  fontFamily="Manrope, sans-serif"
-                  fontSize={10}
-                  fill="#4f4438"
-                  listening={false}
-                />
-                <Text
-                  x={stageWidth - 220}
-                  y={77}
-                  width={188}
-                  text={`Open Sides: ${planSummary.openSides.join(", ") || "None"}`}
-                  fontFamily="Manrope, sans-serif"
-                  fontSize={10}
-                  fill="#4f4438"
-                  listening={false}
-                />
-                <Text
-                  x={stageWidth - 220}
-                  y={92}
-                  width={188}
-                  text={`Covered: ${planSummary.coveredSides.join(", ") || "None"}`}
-                  fontFamily="Manrope, sans-serif"
-                  fontSize={10}
-                  fill="#4f4438"
-                  listening={false}
-                />
-                <Text
-                  x={stageWidth - 220}
-                  y={107}
-                  width={188}
-                  text="Scale: 1 unit = 1 ft"
-                  fontFamily="Manrope, sans-serif"
-                  fontSize={10}
-                  fill="#4f4438"
                   listening={false}
                 />
               </>
             )}
           </Layer>
 
-          <Layer listening={false} opacity={isPresentationMode ? 0.16 : 1}>
+          <Layer listening={false} opacity={isPresentationMode ? (isDarkTheme ? 0.34 : 0.62) : 1}>
             {gridLines}
             <Rect
               fill="transparent"
               height={stageHeight}
-              stroke={isPresentationMode ? "#6d5d4b" : "black"}
+              stroke={isDarkTheme
+                ? (isPresentationMode ? "rgba(120, 181, 192, 0.65)" : "rgba(120, 181, 192, 0.45)")
+                : (isPresentationMode ? "rgba(122, 124, 111, 0.52)" : "rgba(122, 124, 111, 0.34)")}
               strokeWidth={1.2}
               width={stageWidth}
               x={0}
@@ -1579,50 +2102,81 @@ function GridFloorPlanEditor({
               boundaries={boundaries}
               stageWidth={stageWidth}
               stageHeight={stageHeight}
+              isDarkTheme={isDarkTheme}
             />
           </Layer>
 
           <Layer>
             {rooms.map((room) => {
-              const roomWidthPx = Math.round((room.width / plotWidth) * stageWidth);
-              const roomHeightPx = Math.round((room.height / plotHeight) * stageHeight);
               const roomX = Math.round((room.x / plotWidth) * stageWidth);
               const roomY = Math.round((room.y / plotHeight) * stageHeight);
+              const roomRightPx = Math.round(((room.x + room.width) / plotWidth) * stageWidth);
+              const roomBottomPx = Math.round(((room.y + room.height) / plotHeight) * stageHeight);
+              const roomWidthPx = Math.max(1, roomRightPx - roomX);
+              const roomHeightPx = Math.max(1, roomBottomPx - roomY);
               const labelFontSize = Math.max(
-                10,
-                Math.min(15, roomWidthPx * 0.08, roomHeightPx * 0.2),
+                isPresentationMode ? 11 : 10,
+                Math.min(isPresentationMode ? 18 : 15, roomWidthPx * 0.09, roomHeightPx * 0.22),
               );
-              const dimensionFontSize = Math.max(
-                9,
-                Math.min(13, roomWidthPx * 0.07, roomHeightPx * 0.16),
+              const wallDimensionFontSize = Math.max(
+                isPresentationMode ? 9 : 8,
+                Math.min(12, roomWidthPx * 0.065, roomHeightPx * 0.14),
               );
               const labelTextHeight = labelFontSize + 6;
-              const dimensionTextHeight = dimensionFontSize + 6;
-              const labelY = Math.max(6, (roomHeightPx / 2) - labelTextHeight);
-              const dimensionY = Math.min(
-                roomHeightPx - dimensionTextHeight - 4,
-                (roomHeightPx / 2) + 4,
+              const widthDimText = formatFeet(room.width);
+              const heightDimText = formatFeet(room.height);
+              const compactDimText = `${widthDimText} x ${heightDimText}`;
+              const showWallDimensions = isPresentationMode
+                ? roomWidthPx >= 118 && roomHeightPx >= 88
+                : roomWidthPx >= 92 && roomHeightPx >= 78;
+              const showSideDimension = showWallDimensions && roomWidthPx >= (isPresentationMode ? 136 : 116);
+              const showCompactDimension = !showWallDimensions
+                && roomWidthPx >= (isPresentationMode ? 88 : 70)
+                && roomHeightPx >= (isPresentationMode ? 62 : 54);
+              const topDimChipHeight = wallDimensionFontSize + 6;
+              const compactDimChipHeight = wallDimensionFontSize + 6;
+              const topReserve = showWallDimensions ? topDimChipHeight + 8 : 6;
+              const bottomReserve = showCompactDimension ? compactDimChipHeight + 8 : 6;
+              const labelAvailableHeight = Math.max(0, roomHeightPx - topReserve - bottomReserve);
+              const labelY = clamp(
+                topReserve + (labelAvailableHeight - labelTextHeight) / 2,
+                4,
+                Math.max(4, roomHeightPx - labelTextHeight - 4),
               );
+              const canRenderLabel = roomWidthPx >= 44 && labelAvailableHeight >= labelTextHeight;
+              const labelText = fitTextToWidth(room.label, roomWidthPx - 18, labelFontSize);
+              const labelChipWidth = Math.min(
+                Math.max(40, labelText.length * labelFontSize * 0.62 + 14),
+                Math.max(28, roomWidthPx - 10),
+              );
+              const labelChipX = Math.max(5, (roomWidthPx - labelChipWidth) / 2);
+              const topDimChipWidth = Math.min(
+                Math.max(44, widthDimText.length * wallDimensionFontSize * 0.62 + 14),
+                Math.max(30, roomWidthPx - 10),
+              );
+              const topDimChipX = Math.max(5, (roomWidthPx - topDimChipWidth) / 2);
+              const leftDimChipHeight = Math.min(
+                Math.max(44, heightDimText.length * wallDimensionFontSize * 0.62 + 16),
+                Math.max(30, roomHeightPx - 10),
+              );
+              const leftDimChipY = Math.max(5, (roomHeightPx - leftDimChipHeight) / 2);
+              const compactDimChipWidth = Math.min(
+                Math.max(56, compactDimText.length * wallDimensionFontSize * 0.56 + 16),
+                Math.max(34, roomWidthPx - 10),
+              );
+              const compactDimChipX = Math.max(5, (roomWidthPx - compactDimChipWidth) / 2);
+              const compactDimChipY = roomHeightPx - (wallDimensionFontSize + 10);
+              const labelChipFill = isPresentationMode
+                ? (isDarkTheme ? "rgba(11, 17, 18, 0.88)" : "rgba(255, 255, 255, 0.87)")
+                : "rgba(255, 255, 255, 0.72)";
+              const dimChipFill = isPresentationMode
+                ? (isDarkTheme ? "rgba(14, 21, 23, 0.85)" : "rgba(245, 244, 235, 0.82)")
+                : "rgba(255, 255, 255, 0.72)";
 
               const isSelected = room.id === selectedId;
-              let isOverlapping = false;
-              for (const other of rooms) {
-                if (other.id === room.id) continue;
-                if (isHall(room) || isHall(other)) continue;
-                
-                const overlapTolerance = 0.5;
-                if (
-                  room.x < other.x + other.width - overlapTolerance &&
-                  room.x + room.width > other.x + overlapTolerance &&
-                  room.y < other.y + other.height - overlapTolerance &&
-                  room.y + room.height > other.y + overlapTolerance
-                ) {
-                  isOverlapping = true;
-                  break;
-                }
-              }
+              const isOverlapping = overlappingRoomIds.has(room.id);
 
-              const roomVisual = getRoomPresentationStyle(room, isPresentationMode, isSelected, isOverlapping);
+              const roomVisual = getRoomPresentationStyle(room, isPresentationMode, isSelected, isOverlapping, isDarkTheme);
 
               return (
                 <Group
@@ -1646,19 +2200,33 @@ function GridFloorPlanEditor({
                   draggable={!isPresentationMode}
                   key={room.id}
                   onClick={isPresentationMode ? undefined : () => activateRoom(room.id)}
-                  onDragStart={isPresentationMode ? undefined : () => activateRoom(room.id)}
+                  onDragStart={isPresentationMode ? undefined : () => {
+                    activateRoom(room.id);
+                    setDraggingRoomId(room.id);
+                  }}
                   onDragEnd={(event) => {
-                    updateRoom(room.id, {
-                      x: clamp(
-                        event.target.x() / pixelsPerPlotUnitX,
-                        0,
-                        Math.max(0, plotWidth - room.width),
-                      ),
-                      y: clamp(
-                        event.target.y() / pixelsPerPlotUnitY,
-                        0,
-                        Math.max(0, plotHeight - room.height),
-                      ),
+                    setDraggingRoomId(null);
+                    const rawX = event.target.x() / pixelsPerPlotUnitX;
+                    const rawY = event.target.y() / pixelsPerPlotUnitY;
+
+                    setRooms((currentRooms) => {
+                      const movingRoom = currentRooms.find((entry) => entry.id === room.id);
+                      if (!movingRoom) {
+                        return currentRooms;
+                      }
+
+                      const nextPosition = resolveDraggedRoomPosition(
+                        movingRoom,
+                        rawX,
+                        rawY,
+                        currentRooms,
+                      );
+
+                      return currentRooms.map((entry) => (
+                        entry.id === room.id
+                          ? { ...entry, ...nextPosition }
+                          : entry
+                      ));
                     });
                   }}
                   onMouseDown={isPresentationMode ? undefined : () => activateRoom(room.id)}
@@ -1703,7 +2271,7 @@ function GridFloorPlanEditor({
                   />
 
                   {isPresentationMode && (
-                    <Group listening={false} opacity={0.85}>
+                    <Group listening={false} opacity={0.48}>
                       {roomTextureLines(roomVisual.texture, roomWidthPx, roomHeightPx)}
                     </Group>
                   )}
@@ -1728,45 +2296,149 @@ function GridFloorPlanEditor({
                     );
                   })()}
 
+                  {/* Render furniture beneath labels/dimensions to keep text readable. */}
+                  {showFurniture && !isEditingDragInProgress && (
+                    <Group listening={false} opacity={isPresentationMode ? 0.58 : 0.8}>
+                      {(furnitureByRoomId.get(room.id) || []).map((item, i) => (
+                        <FurniturePiece
+                          key={i}
+                          item={item}
+                          pxX={pixelsPerPlotUnitX}
+                          pxY={pixelsPerPlotUnitY}
+                        />
+                      ))}
+                    </Group>
+                  )}
+
+                  {isSelected && !isPresentationMode && (
+                    <Rect
+                      listening={false}
+                      x={2}
+                      y={2}
+                      width={Math.max(0, roomWidthPx - 4)}
+                      height={Math.max(0, roomHeightPx - 4)}
+                      stroke={isDarkTheme ? "#00e5ff" : "#476362"}
+                      strokeWidth={1.8}
+                      dash={[8, 4]}
+                      shadowColor={isDarkTheme ? "#00e5ff" : "#476362"}
+                      shadowBlur={8}
+                      shadowOpacity={isDarkTheme ? 0.38 : 0.2}
+                    />
+                  )}
+
                   {isOverlapping && (
                     <Text
                       x={roomWidthPx / 2 - 30} y={roomHeightPx - 15}
                       text="⚠️ Overlapping"
                       fill="#ef4444"
-                      fontSize={Math.max(8, dimensionFontSize * 0.8)}
+                      fontSize={Math.max(8, wallDimensionFontSize * 0.9)}
                       fontStyle="bold"
                       listening={false}
                     />
                   )}
-                  {!(isTransforming && isSelected) && (
+                  {!(isTransforming && isSelected) && canRenderLabel && (
                     <Group>
+                      <Rect
+                        x={labelChipX}
+                        y={Math.max(4, labelY - 1)}
+                        width={labelChipWidth}
+                        height={labelTextHeight}
+                        cornerRadius={6}
+                        fill={labelChipFill}
+                        listening={false}
+                      />
                       <Text
                         align="center"
-                        fontFamily={isPresentationMode ? "Cinzel, serif" : "Manrope, sans-serif"}
+                        fontFamily="Inter, sans-serif"
                         fontSize={labelFontSize}
                         fontStyle="bold"
                         fill={roomVisual.labelColor}
                         height={labelTextHeight}
                         listening={false}
-                        padding={4}
-                        text={room.label.toUpperCase()}
+                        padding={3}
+                        stroke={isPresentationMode ? (isDarkTheme ? "rgba(3, 8, 9, 0.75)" : "rgba(255, 255, 255, 0.78)") : undefined}
+                        strokeWidth={isPresentationMode ? 0.45 : 0}
+                        text={labelText}
                         verticalAlign="middle"
-                        width={roomWidthPx}
+                        width={labelChipWidth}
+                        x={labelChipX}
                         y={labelY}
                       />
-                      <Text
-                        align="center"
-                        fill={roomVisual.dimensionColor}
-                        fontFamily={isPresentationMode ? "Manrope, sans-serif" : "Manrope, sans-serif"}
-                        fontSize={dimensionFontSize}
-                        height={dimensionTextHeight}
-                        listening={false}
-                        padding={2}
-                        text={`${Math.round(room.width)} × ${Math.round(room.height)} ft`}
-                        verticalAlign="middle"
-                        width={roomWidthPx}
-                        y={dimensionY}
-                      />
+
+                      {showWallDimensions && (
+                        <>
+                          <Rect
+                            x={topDimChipX}
+                            y={2}
+                            width={topDimChipWidth}
+                            height={topDimChipHeight}
+                            cornerRadius={4}
+                            fill={dimChipFill}
+                            listening={false}
+                          />
+                          <Text
+                            align="center"
+                            fill={roomVisual.dimensionColor}
+                            fontFamily="Inter, sans-serif"
+                            fontSize={wallDimensionFontSize}
+                            listening={false}
+                            text={widthDimText}
+                            width={topDimChipWidth}
+                            x={topDimChipX}
+                            y={3}
+                          />
+                          {showSideDimension && (
+                            <>
+                              <Rect
+                                x={3}
+                                y={leftDimChipY}
+                                width={wallDimensionFontSize + 7}
+                                height={leftDimChipHeight}
+                                cornerRadius={4}
+                                fill={dimChipFill}
+                                listening={false}
+                              />
+                              <Text
+                                align="center"
+                                fill={roomVisual.dimensionColor}
+                                fontFamily="Inter, sans-serif"
+                                fontSize={wallDimensionFontSize}
+                                listening={false}
+                                text={heightDimText}
+                                width={leftDimChipHeight}
+                                x={4}
+                                y={leftDimChipY + leftDimChipHeight}
+                                rotation={-90}
+                              />
+                            </>
+                          )}
+                        </>
+                      )}
+
+                      {showCompactDimension && (
+                        <>
+                          <Rect
+                            x={compactDimChipX}
+                            y={compactDimChipY}
+                            width={compactDimChipWidth}
+                            height={compactDimChipHeight}
+                            cornerRadius={4}
+                            fill={dimChipFill}
+                            listening={false}
+                          />
+                          <Text
+                            align="center"
+                            fill={roomVisual.dimensionColor}
+                            fontFamily="Inter, sans-serif"
+                            fontSize={wallDimensionFontSize}
+                            listening={false}
+                            text={compactDimText}
+                            width={compactDimChipWidth}
+                            x={compactDimChipX}
+                            y={compactDimChipY + 1}
+                          />
+                        </>
+                      )}
 
                   {/* ── Ventilation Warning ── */}
                   {(() => {
@@ -1778,9 +2450,9 @@ function GridFloorPlanEditor({
                           return (
                             <Text
                               text="⚠️"
-                              fontSize={dimensionFontSize * 1.5}
-                              x={roomWidthPx - (dimensionFontSize * 1.5) - 4}
-                              y={4}
+                              fontSize={wallDimensionFontSize * 1.5}
+                              x={roomWidthPx - (wallDimensionFontSize * 1.5) - 4}
+                              y={showWallDimensions ? topDimChipHeight + 4 : 4}
                               listening={false}
                             />
                           );
@@ -1789,20 +2461,6 @@ function GridFloorPlanEditor({
                     }
                     return null;
                   })()}
-
-                  {/* ── Dynamic Deterministic Furniture ── */}
-                  {showFurniture && (
-                    <Group listening={false} opacity={0.8}>
-                      {placeFurniture(room).map((item, i) => (
-                        <FurniturePiece 
-                          key={i} 
-                          item={item} 
-                          pxX={pixelsPerPlotUnitX} 
-                          pxY={pixelsPerPlotUnitY} 
-                        />
-                      ))}
-                    </Group>
-                  )}
 
                   {/* ── Doors ── */}
                   {(room.doors || []).map((door) => {
@@ -1985,17 +2643,29 @@ function GridFloorPlanEditor({
 
           {/* Compass indicator layer */}
           <Layer listening={false}>
-            <CompassIndicator frontDirection={frontDirection} stageWidth={stageWidth} />
+            <CompassIndicator
+              frontDirection={frontDirection}
+              stageWidth={stageWidth}
+              isDarkTheme={isDarkTheme}
+              showFrontLabel={!isPresentationMode}
+            />
           </Layer>
 
           {/* Dedicated top layer for the Transformer so its handles are always
               above every room Group and can never be intercepted by them */}
           <Layer>
             <Transformer
+              anchorFill="#476362"
+              anchorStroke="#fbf9f2"
+              anchorStrokeWidth={1.2}
+              anchorSize={10}
               anchorDragBoundFunc={(_oldPosition, newPosition) => ({
                 x: newPosition.x,
                 y: newPosition.y,
               })}
+              borderStroke="#476362"
+              borderStrokeWidth={1.8}
+              borderDash={[6, 4]}
               boundBoxFunc={(oldBox, newBox) => ({
                 x: newBox.x,
                 y: newBox.y,
@@ -2025,9 +2695,18 @@ function GridFloorPlanEditor({
           <div className="room-actions-header">
             <span className="room-actions-title">{selectedRoom.label}</span>
             <span className="room-actions-dims">
-              {Math.round(selectedRoom.width)} × {Math.round(selectedRoom.height)} ft
+              {formatFeet(selectedRoom.width)} × {formatFeet(selectedRoom.height)}
             </span>
           </div>
+          <label className="room-name-edit-label">
+            Room Name
+            <input
+              className="room-name-edit-input"
+              value={selectedRoom.label}
+              onChange={(event) => updateSelectedRoomLabel(event.target.value)}
+              placeholder="Enter room name"
+            />
+          </label>
           <div className="room-actions-buttons">
             <button
               className="room-action-btn door-btn"

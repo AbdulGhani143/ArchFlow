@@ -11,7 +11,96 @@ const initialForm = {
   engine: "v1",
 };
 
+const CARDINAL_DIRECTIONS = ["north", "east", "south", "west"];
+
+function normalizeBoundaries(nextBoundaries, frontDirection) {
+  const safeFrontDirection = CARDINAL_DIRECTIONS.includes(frontDirection)
+    ? frontDirection
+    : initialForm.frontDirection;
+  const source = nextBoundaries && typeof nextBoundaries === "object" ? nextBoundaries : {};
+
+  return CARDINAL_DIRECTIONS.reduce((acc, direction) => {
+    if (direction === safeFrontDirection) {
+      acc[direction] = "front";
+    } else {
+      acc[direction] = source[direction] === "open" ? "open" : "covered";
+    }
+    return acc;
+  }, {});
+}
+
+function CustomSelect({ name, value, options, onChange, placeholder }) {
+  const [isOpen, setIsOpen] = useState(false);
+  const rootRef = useRef(null);
+
+  useEffect(() => {
+    if (!isOpen) return undefined;
+
+    const closeOnOutsideClick = (event) => {
+      if (rootRef.current && !rootRef.current.contains(event.target)) {
+        setIsOpen(false);
+      }
+    };
+
+    document.addEventListener("pointerdown", closeOnOutsideClick);
+    return () => document.removeEventListener("pointerdown", closeOnOutsideClick);
+  }, [isOpen]);
+
+  const selectedOption = options.find((option) => option.value === value);
+
+  const handleTriggerKeyDown = (event) => {
+    if (event.key === " " || event.key === "Enter" || event.key === "ArrowDown") {
+      event.preventDefault();
+      setIsOpen(true);
+    }
+    if (event.key === "Escape") {
+      setIsOpen(false);
+    }
+  };
+
+  return (
+    <div className={`custom-select ${isOpen ? "open" : ""}`} ref={rootRef}>
+      <button
+        type="button"
+        className="custom-select-trigger"
+        aria-haspopup="listbox"
+        aria-expanded={isOpen}
+        onClick={() => setIsOpen((open) => !open)}
+        onKeyDown={handleTriggerKeyDown}
+      >
+        <span>{selectedOption?.label ?? placeholder}</span>
+        <span className="custom-select-chevron" aria-hidden="true" />
+      </button>
+
+      {isOpen ? (
+        <div className="custom-select-menu" role="listbox" aria-label={name}>
+          {options.map((option) => (
+            <button
+              key={option.value}
+              type="button"
+              className={`custom-select-option ${option.value === value ? "selected" : ""}`}
+              role="option"
+              aria-selected={option.value === value}
+              onClick={() => {
+                onChange(name, option.value);
+                setIsOpen(false);
+              }}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function App() {
+  const [themeMode, setThemeMode] = useState(() => {
+    if (typeof window === "undefined") return "light";
+    const storedTheme = window.localStorage.getItem("floorplan-theme");
+    return storedTheme === "dark" ? "dark" : "light";
+  });
   const [form, setForm] = useState(initialForm);
   const [plot, setPlot] = useState({
     plotWidth: 40,
@@ -20,13 +109,18 @@ function App() {
     plotShape: initialForm.plotShape,
   });
   
-  // New unified boundary state
-  const [boundaries, setBoundaries] = useState({
-    north: "covered",
-    east: "open",
-    south: "front", // derived from frontDirection
-    west: "covered"
-  });
+  // Unified boundary state with one canonical front side.
+  const [boundaries, setBoundaries] = useState(() =>
+    normalizeBoundaries(
+      {
+        north: "covered",
+        east: "open",
+        south: "front",
+        west: "covered",
+      },
+      initialForm.frontDirection,
+    ),
+  );
 
   const [initialRooms, setInitialRooms] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -41,17 +135,9 @@ function App() {
     setForm((current) => {
       const updated = { ...current, [name]: value };
       
-      // Auto-update boundaries when front direction changes
+      // Keep boundaries canonical whenever front direction changes.
       if (name === "frontDirection") {
-        setBoundaries(prev => {
-          const nextBoundaries = { ...prev };
-          // reset whatever was front before
-          for (let key in nextBoundaries) {
-            if (nextBoundaries[key] === "front") nextBoundaries[key] = "covered";
-          }
-          nextBoundaries[value] = "front"; // set new front
-          return nextBoundaries;
-        });
+        setBoundaries((prev) => normalizeBoundaries(prev, value));
       }
       
       return updated;
@@ -59,10 +145,24 @@ function App() {
   };
 
   const handleBoundaryToggle = (direction) => {
-    setBoundaries(prev => ({
-      ...prev,
-      [direction]: prev[direction] === "covered" ? "open" : "covered"
-    }));
+    setBoundaries((prev) => {
+      if (!CARDINAL_DIRECTIONS.includes(direction) || prev[direction] === "front") {
+        return prev;
+      }
+
+      const nextStatus = prev[direction] === "covered" ? "open" : "covered";
+      return normalizeBoundaries(
+        {
+          ...prev,
+          [direction]: nextStatus,
+        },
+        form.frontDirection,
+      );
+    });
+  };
+
+  const handleSelectChange = (name, value) => {
+    handleChange({ target: { name, value } });
   };
 
   const requestLayout = async (nextPlot) => {
@@ -70,12 +170,21 @@ function App() {
     setError("");
 
     try {
+      const normalizedBoundaries = normalizeBoundaries(
+        boundaries,
+        nextPlot.frontDirection ?? form.frontDirection,
+      );
+
       const response = await fetch("/api/layout", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ ...nextPlot, boundaries, engine: nextPlot.engine ?? "v1" }),
+        body: JSON.stringify({
+          ...nextPlot,
+          boundaries: normalizedBoundaries,
+          engine: nextPlot.engine ?? "v1",
+        }),
       });
 
       const payload = await response.json();
@@ -122,14 +231,21 @@ function App() {
         plotShape: payload.plot.shape || plot.plotShape,
       });
 
-      // 2. Update Boundaries if present
-      if (payload.boundaries) {
-        setBoundaries(payload.boundaries);
+      const requestedFrontDirection = payload?.plot?.front;
+      const importedFrontDirection = CARDINAL_DIRECTIONS.includes(requestedFrontDirection)
+        ? requestedFrontDirection
+        : form.frontDirection;
+
+      // 2. Update Form (Front Direction)
+      if (requestedFrontDirection && CARDINAL_DIRECTIONS.includes(requestedFrontDirection)) {
+        setForm((prev) => ({ ...prev, frontDirection: requestedFrontDirection }));
       }
 
-      // 3. Update Form (Front Direction)
-      if (payload.plot.front) {
-        setForm(prev => ({ ...prev, frontDirection: payload.plot.front }));
+      // 3. Update boundaries from import while enforcing one canonical front side.
+      if (payload.boundaries || payload.plot.front) {
+        setBoundaries((prev) =>
+          normalizeBoundaries(payload.boundaries ?? prev, importedFrontDirection),
+        );
       }
 
       // 4. Update Rooms
@@ -180,12 +296,34 @@ function App() {
     });
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem("floorplan-theme", themeMode);
+  }, [themeMode]);
+
   return (
-    <main className="app-shell">
+    <main className={`app-shell theme-${themeMode}`}>
       <section className="controls sidebar-shell">
         <div className="sidebar-project">
           <h2>Project Alpha</h2>
           <p>Residential Plan</p>
+        </div>
+
+        <div className="theme-switch" role="group" aria-label="Theme mode">
+          <button
+            type="button"
+            className={`theme-btn ${themeMode === "light" ? "active" : ""}`}
+            onClick={() => setThemeMode("light")}
+          >
+            Light
+          </button>
+          <button
+            type="button"
+            className={`theme-btn ${themeMode === "dark" ? "active" : ""}`}
+            onClick={() => setThemeMode("dark")}
+          >
+            Dark
+          </button>
         </div>
 
         <h1>Interactive Floor Plan Editor</h1>
@@ -212,21 +350,31 @@ function App() {
 
             <label>
               Plot Shape
-              <select name="plotShape" onChange={handleChange} value={form.plotShape}>
-                <option value="square">Square</option>
-                <option value="rectangle">Rectangle</option>
-                <option value="deep-rectangle">Deep Rectangle</option>
-              </select>
+              <CustomSelect
+                name="plotShape"
+                value={form.plotShape}
+                onChange={handleSelectChange}
+                options={[
+                  { value: "square", label: "Square" },
+                  { value: "rectangle", label: "Rectangle" },
+                  { value: "deep-rectangle", label: "Deep Rectangle" },
+                ]}
+              />
             </label>
 
             <label>
               Front Direction
-              <select name="frontDirection" onChange={handleChange} value={form.frontDirection}>
-                <option value="north">North</option>
-                <option value="east">East</option>
-                <option value="south">South</option>
-                <option value="west">West</option>
-              </select>
+              <CustomSelect
+                name="frontDirection"
+                value={form.frontDirection}
+                onChange={handleSelectChange}
+                options={[
+                  { value: "north", label: "North" },
+                  { value: "east", label: "East" },
+                  { value: "south", label: "South" },
+                  { value: "west", label: "West" },
+                ]}
+              />
             </label>
           </div>
 
@@ -234,10 +382,15 @@ function App() {
             <h3 className="sidebar-card-title">Room Requirements</h3>
             <label>
               Dwelling Type
-              <select name="dwellingType" onChange={handleChange} value={form.dwellingType}>
-                <option value="house">House</option>
-                <option value="flat">Flat / Building Floor</option>
-              </select>
+              <CustomSelect
+                name="dwellingType"
+                value={form.dwellingType}
+                onChange={handleSelectChange}
+                options={[
+                  { value: "house", label: "House" },
+                  { value: "flat", label: "Flat / Building Floor" },
+                ]}
+              />
             </label>
 
             <label>
@@ -296,23 +449,23 @@ function App() {
             <h3 className="sidebar-card-title">Engine</h3>
             <label className="engine-toggle-label">
               <strong>Layout Engine</strong>
-              <select
+              <CustomSelect
                 name="engine"
                 value={form.engine}
-                onChange={handleChange}
-                className="engine-toggle-select"
-              >
-                <option value="v1">V1 — Rule-based (Stable)</option>
-                <option value="v2">V2 — Smart Matrix (Beta)</option>
-                <option value="v3">V3 — Smart Zoning (New)</option>
-              </select>
+                onChange={handleSelectChange}
+                options={[
+                  { value: "v1", label: "V1 - Rule-based (Stable)" },
+                  { value: "v2", label: "V2 - Smart Matrix (Beta)" },
+                  { value: "v3", label: "V3 - Smart Zoning (New)" },
+                ]}
+              />
             </label>
           </div>
 
           <button type="submit" className="sidebar-primary-cta">Generate Layout</button>
         </form>
 
-        <div className="import-container sidebar-card">
+        <div className="import-container sidebar-card sidebar-secondary-card">
           <h3 className="sidebar-card-title">Import / Export</h3>
           <button 
             type="button" 
@@ -345,7 +498,7 @@ function App() {
         {isLoading ? <p className="message">Generating initial layout...</p> : null}
         {error ? <p className="message error">{error}</p> : null}
 
-        <div className="spec-list sidebar-card">
+        <div className="spec-list sidebar-card sidebar-secondary-card sidebar-meta-card">
           <h3 className="sidebar-card-title">Current Plot</h3>
           <p>Current plot: {plot.plotGaj ?? form.plotGaj} Gaj</p>
           <p>Shape: {plot.plotShape ?? form.plotShape}</p>
@@ -364,6 +517,7 @@ function App() {
           frontDirection={form.frontDirection}
           dwellingType={form.dwellingType}
           boundaries={boundaries}
+          themeMode={themeMode}
         />
       </section>
     </main>
