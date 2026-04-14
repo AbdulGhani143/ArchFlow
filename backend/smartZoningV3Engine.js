@@ -21,38 +21,38 @@ const SHAPE_RATIOS = { square: 1, rectangle: 0.78, "deep-rectangle": 0.62 };
 
 // Room minimum dimensions in feet [width, height]
 const MIN_SIZES = {
-  "Master Bedroom": [12, 14],
-  "Bedroom": [10, 12],
-  "Living Room": [12, 16],
-  "Kitchen": [8, 10],
-  "Toilet": [4, 7],
+  "Master Bedroom":      [12, 14],
+  "Bedroom":             [10, 12],
+  "Living Room":         [12, 16],
+  "Kitchen":             [8, 10],
+  "Toilet":              [4, 7],
   "Master Attached Bath": [4, 7],
-  "Attached Bath": [4, 7],
-  "Common Bathroom": [4, 7],
-  "Shaft": [3, 4],
-  "Dining": [8, 10],
-  "Hall": [8, 10],
-  "Entrance": [4, 4],
-  "Parking": [10, 10],
-  "Front Yard": [6, 5],
-  "Staircase": [7, 8],
-  "Balcony": [4, 4],
-  "Back Utility": [6, 4],
-  "Porch": [6, 4],
+  "Attached Bath":       [4, 7],
+  "Common Bathroom":     [4, 7],
+  "Shaft":               [3, 4],
+  "Dining":              [8, 10],
+  "Hall":                [8, 10],
+  "Entrance":            [4, 4],
+  "Parking":             [10, 10],
+  "Front Yard":          [6, 5],
+  "Staircase":           [7, 8],
+  "Balcony":             [4, 4],
+  "Back Utility":        [6, 4],
+  "Porch":               [6, 4],
 };
 
 const MAX_RATIOS = {
   "Master Bedroom": 1.6,
-  "Bedroom": 1.8,
+  "Bedroom":        1.8,
 };
 
 const CORRIDOR_MIN_WIDTH = 3; // feet
 
 // Setback definitions (meters → feet)
 const SETBACKS = {
-  small: { front: 1.5 * 3.281, sides: 0.9 * 3.281, rear: 1.2 * 3.281 },
-  medium: { front: 2.0 * 3.281, sides: 1.0 * 3.281, rear: 1.5 * 3.281 },
-  large: { front: 3.0 * 3.281, sides: 1.5 * 3.281, rear: 2.0 * 3.281 },
+  small:   { front: 1.5 * 3.281, sides: 0.9 * 3.281, rear: 1.2 * 3.281 },
+  medium:  { front: 2.0 * 3.281, sides: 1.0 * 3.281, rear: 1.5 * 3.281 },
+  large:   { front: 3.0 * 3.281, sides: 1.5 * 3.281, rear: 2.0 * 3.281 },
 };
 
 // Zone default percentages
@@ -201,15 +201,15 @@ function mapEdges(boundaries, frontDir) {
   switch (dir) {
     case "south": leftDir = "west"; rightDir = "east"; break;
     case "north": leftDir = "east"; rightDir = "west"; break;
-    case "east": leftDir = "south"; rightDir = "north"; break;
-    case "west": leftDir = "north"; rightDir = "south"; break;
-    default: leftDir = "west"; rightDir = "east";
+    case "east":  leftDir = "south"; rightDir = "north"; break;
+    case "west":  leftDir = "north"; rightDir = "south"; break;
+    default:      leftDir = "west"; rightDir = "east";
   }
 
   return {
-    left: boundaries[leftDir] === "open" ? "open" : "covered",
+    left:  boundaries[leftDir] === "open" ? "open" : "covered",
     right: boundaries[rightDir] === "open" ? "open" : "covered",
-    back: boundaries[opp[dir]] === "open" ? "open" : "covered",
+    back:  boundaries[opp[dir]] === "open" ? "open" : "covered",
   };
 }
 
@@ -236,10 +236,10 @@ function createZones(ba, serviceSide, ratios) {
   const publicY = round(ba.y + privateH + semiPrivateH);
 
   return {
-    private: { x: ba.x, y: privateY, w: ba.width, h: privateH },
+    private:     { x: ba.x, y: privateY, w: ba.width, h: privateH },
     semiPrivate: { x: ba.x, y: semiPrivateY, w: ba.width, h: semiPrivateH },
-    public: { x: ba.x, y: publicY, w: ba.width, h: publicH },
-    service: { x: serviceX, y: semiPrivateY, w: serviceW, h: semiPrivateH + publicH },
+    public:      { x: ba.x, y: publicY, w: ba.width, h: publicH },
+    service:     { x: serviceX, y: semiPrivateY, w: serviceW, h: semiPrivateH + publicH },
   };
 }
 
@@ -689,9 +689,9 @@ function tagVentilation(rooms, ba) {
   const TOL = 1.0;
 
   for (const r of rooms) {
-    const touchesLeft = Math.abs(r.x - ba.x) < TOL;
-    const touchesRight = Math.abs((r.x + r.width) - baRight) < TOL;
-    const touchesTop = Math.abs(r.y - ba.y) < TOL;
+    const touchesLeft   = Math.abs(r.x - ba.x) < TOL;
+    const touchesRight  = Math.abs((r.x + r.width) - baRight) < TOL;
+    const touchesTop    = Math.abs(r.y - ba.y) < TOL;
     const touchesBottom = Math.abs((r.y + r.height) - baBottom) < TOL;
 
     const externalEdges = [touchesLeft, touchesRight, touchesTop, touchesBottom].filter(Boolean).length;
@@ -802,8 +802,8 @@ function applyVastu(rooms, ba) {
 function validateBounds(rooms, ba) {
   for (const r of rooms) {
     if (r.x < ba.x - 0.5 || r.y < ba.y - 0.5 ||
-      r.x + r.width > ba.x + ba.width + 0.5 ||
-      r.y + r.height > ba.y + ba.height + 0.5) return false;
+        r.x + r.width > ba.x + ba.width + 0.5 ||
+        r.y + r.height > ba.y + ba.height + 0.5) return false;
     if (r.width <= 0 || r.height <= 0) return false;
   }
   return true;

@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { Group, Layer, Line, Rect, Stage, Text, Transformer, Arc } from "react-konva";
+import { Group, Layer, Line, Rect, Stage, Text, Transformer, Arc, Shape } from "react-konva";
 
 const BASE_GRID_CELLS = 256;
 const CELLS_PER_FOOT = 4;
@@ -64,50 +64,153 @@ const ROOM_COLORS = {
   Courtyard: "#e8f5e9",
 };
 
-const GHOST_FURNITURE = {
-  "Master Bedroom": [
-    { label: "King Bed",  w: 6.5, h: 6.5, anchor: "center-top", type: "bed" },
-    { label: "Wardrobe",  w: 4,   h: 2,   anchor: "left-wall", type: "wardrobe" },
-    { label: "Study",     w: 4,   h: 2,   anchor: "bottom-right", type: "study" }
-  ],
-  "Bedroom": [
-    { label: "Queen Bed", w: 5,   h: 6.5, anchor: "center-top", type: "bed" },
-    { label: "Wardrobe",  w: 4,   h: 2,   anchor: "left-wall", type: "wardrobe" },
-  ],
-  "Bedroom 2": [
-    { label: "Queen Bed", w: 5,   h: 6.5, anchor: "center-top", type: "bed" },
-    { label: "Wardrobe",  w: 4,   h: 2,   anchor: "left-wall", type: "wardrobe" },
-  ],
-  "Bedroom 3": [
-    { label: "Single Bed", w: 3,  h: 6.5, anchor: "center-top", type: "bed" },
-    { label: "Study",      w: 4,  h: 2,   anchor: "bottom-right", type: "study" },
-  ],
-  "Bedroom 4": [
-    { label: "Single Bed", w: 3,  h: 6.5, anchor: "center-top", type: "bed" },
-    { label: "Study",      w: 4,  h: 2,   anchor: "bottom-right", type: "study" },
-  ],
-  "Bedroom 5": [
-    { label: "Single Bed", w: 3,  h: 6.5, anchor: "center-top", type: "bed" },
-  ],
-  "Bedroom 6": [
-    { label: "Single Bed", w: 3,  h: 6.5, anchor: "center-top", type: "bed" },
-  ],
-  "Guest Room": [
-    { label: "Single Bed", w: 3,  h: 6.5, anchor: "center-top", type: "bed" },
-  ],
-  "Kitchen": [
-    { label: "Kitchen Counter", w: -1, h: -1, anchor: "l-shape-kitchen", type: "l-counter" },
-    { label: "Fridge",     w: 3,  h: 2.5, anchor: "top-right", type: "fridge" },
-  ],
-  "Hall": [
-    { label: "L-Sofa",       w: 7, h: 5,   anchor: "corner-bottom-left", type: "l-sofa" },
-    { label: "Coffee Table", w: 4, h: 2.5, anchor: "center-sofa", type: "coffee-table" },
-    { label: "TV Unit",      w: 5, h: 1.5, anchor: "right-wall", type: "tv" },
-  ],
-};
+function placeFurniture(room) {
+  const items = [];
+  const minDim = Math.min(room.width, room.height);
+  const area = room.width * room.height;
+  const isHoriz = room.width >= room.height;
+
+  if (room.type.toLowerCase().includes("bed") || room.type === "Guest Room") {
+    let bedW, bedH;
+    if (minDim < 10) { bedW = 3; bedH = 6.5; }
+    else if (minDim < 14) { bedW = 5; bedH = 6.5; }
+    else { bedW = 6.5; bedH = 6.5; }
+
+    const isKing = bedW === 6.5;
+    const typeLabel = isKing ? "king-bed" : (bedW === 5 ? "queen-bed" : "single-bed");
+
+    let bedX = (room.width - bedW) / 2;
+    let bedY = 0.5; // Offset slightly from wall
+    
+    // Attempt basic door avoidance on top wall
+    const topHasDoor = (room.doors || []).some(d => d.wall === "top");
+    if (topHasDoor) {
+      if (isHoriz) {
+        bedX = room.width - 6.5 - 0.5;
+        bedY = (room.height - bedW) / 2;
+        items.push({ type: typeLabel, w: 6.5, h: bedW, x: bedX, y: bedY, rot: 90 });
+        if (isKing) {
+          items.push({ type: "side-table", w: 1.5, h: 1.5, x: bedX + 6.5 - 1.5, y: bedY - 1.5 - 0.5 });
+          items.push({ type: "side-table", w: 1.5, h: 1.5, x: bedX + 6.5 - 1.5, y: bedY + bedW + 0.5 });
+        }
+      } else {
+        bedY = room.height - 6.5 - 0.5;
+        items.push({ type: typeLabel, w: bedW, h: 6.5, x: bedX, y: bedY, rot: 180 });
+        if (isKing) {
+          items.push({ type: "side-table", w: 1.5, h: 1.5, x: bedX - 1.5 - 0.5, y: bedY });
+          items.push({ type: "side-table", w: 1.5, h: 1.5, x: bedX + bedW + 0.5, y: bedY });
+        }
+      }
+    } else {
+      items.push({ type: typeLabel, w: bedW, h: 6.5, x: bedX, y: bedY, rot: 0 });
+      if (isKing) {
+        items.push({ type: "side-table", w: 1.5, h: 1.5, x: bedX - 1.5 - 0.5, y: bedY });
+        items.push({ type: "side-table", w: 1.5, h: 1.5, x: bedX + bedW + 0.5, y: bedY });
+      }
+    }
+  } 
+  else if (room.type === "Hall" || room.type === "Living") {
+    if (area < 150) {
+      items.push({ type: "2-seater", w: 5, h: 3, x: (room.width - 5)/2, y: room.height - 3 - 1 });
+    } else if (area < 250) {
+      items.push({ type: "3-seater", w: 7, h: 3, x: (room.width - 7)/2, y: room.height - 3 - 1 });
+      items.push({ type: "coffee-table", w: 4, h: 2, x: (room.width - 4)/2, y: room.height - 3 - 1 - 2.5 });
+    } else {
+      items.push({ type: "l-shape-sofa", w: 8, h: 6, x: room.width - 8 - 1, y: room.height - 6 - 1, rot: 0 });
+      items.push({ type: "tv-unit", w: 6, h: 1.5, x: (room.width - 6)/2, y: 0.5 });
+    }
+  }
+  else if (room.type === "Kitchen") {
+    const hasLeftDoor = (room.doors || []).some(d => d.wall === "left");
+    if (!hasLeftDoor) {
+      items.push({ type: "kitchen-counter", w: 2, h: room.height - 1, x: 0.5, y: 0.5 });
+    } else {
+      items.push({ type: "kitchen-counter", w: room.width - 1, h: 2, x: 0.5, y: 0.5 });
+    }
+  }
+  else if (room.type.includes("Dining") || room.type === "Dining") {
+    if (area < 100) items.push({ type: "dining-4", w: 3, h: 3, x: (room.width - 3)/2, y: (room.height - 3)/2 });
+    else if (area < 150) items.push({ type: "dining-6", w: 5, h: 3, x: (room.width - 5)/2, y: (room.height - 3)/2 });
+    else items.push({ type: "dining-8", w: 7, h: 3, x: (room.width - 7)/2, y: (room.height - 3)/2 });
+  }
+
+  return items;
+}
+
+function FurniturePiece({ item, pxX, pxY }) {
+  const x = item.x * pxX;
+  const y = item.y * pxY;
+  const w = item.w * pxX;
+  const h = item.h * pxY;
+  const strokeColor = "#111827";
+  const bg = "#f3f4f6";
+
+  if (item.type.includes("bed")) {
+    const isRot = item.rot === 90;
+    return (
+      <Group x={x} y={y}>
+        <Rect width={w} height={h} fill={bg} stroke={strokeColor} strokeWidth={1} />
+        {item.rot === 0 || item.rot === 180 ? (
+          <Line points={[0, h * 0.3, w, h * 0.3]} stroke={strokeColor} strokeWidth={1} />
+        ) : (
+          <Line points={[w * 0.3, 0, w * 0.3, h]} stroke={strokeColor} strokeWidth={1} />
+        )}
+        {item.type !== "single-bed" ? (
+          <>
+            <Rect x={w*0.1} y={h*0.05} width={isRot?w*0.15:w*0.3} height={isRot?h*0.3:h*0.15} fill="#e5e7eb" stroke={strokeColor} strokeWidth={1} />
+            <Rect x={isRot?w*0.1:w*0.6} y={isRot?h*0.6:h*0.05} width={isRot?w*0.15:w*0.3} height={isRot?h*0.3:h*0.15} fill="#e5e7eb" stroke={strokeColor} strokeWidth={1} />
+          </>
+        ) : (
+          <Rect x={w*0.25} y={h*0.05} width={w*0.5} height={h*0.15} fill="#e5e7eb" stroke={strokeColor} strokeWidth={1} />
+        )}
+      </Group>
+    );
+  } else if (item.type.includes("seater") || item.type === "l-shape-sofa") {
+    return (
+      <Group x={x} y={y}>
+        <Rect width={w} height={h} fill={bg} stroke={strokeColor} strokeWidth={1} cornerRadius={4} />
+        {item.type === "l-shape-sofa" ? (
+          <Rect x={w*0.3} y={0} width={w*0.7} height={h*0.7} fill="white" />
+        ) : (
+          <Rect x={w*0.1} y={h*0.1} width={w*0.8} height={h*0.8} fill="#e5e7eb" stroke={strokeColor} strokeWidth={1} cornerRadius={2} />
+        )}
+        {item.type === "l-shape-sofa" && (
+           <Line points={[w*0.3, 0, w*0.3, h*0.7, w, h*0.7]} stroke={strokeColor} strokeWidth={1} />
+        )}
+      </Group>
+    );
+  } else if (item.type.includes("dining")) {
+    const is4 = item.type.includes("4");
+    const is6 = item.type.includes("6");
+    const is8 = item.type.includes("8");
+    const chairR = Math.min(w, h) * 0.15;
+    return (
+      <Group x={x} y={y}>
+        <Rect width={w} height={h} fill="#e5e7eb" stroke={strokeColor} strokeWidth={1} cornerRadius={2} />
+        {(is6 || is8) && <Circle x={w*0.3} y={0} radius={chairR} fill={bg} stroke={strokeColor} strokeWidth={1} />}
+        {(is6 || is8) && <Circle x={w*0.7} y={0} radius={chairR} fill={bg} stroke={strokeColor} strokeWidth={1} />}
+        {is4 && <Circle x={w/2} y={0} radius={chairR} fill={bg} stroke={strokeColor} strokeWidth={1} />}
+        {(is6 || is8) && <Circle x={w*0.3} y={h} radius={chairR} fill={bg} stroke={strokeColor} strokeWidth={1} />}
+        {(is6 || is8) && <Circle x={w*0.7} y={h} radius={chairR} fill={bg} stroke={strokeColor} strokeWidth={1} />}
+        {is4 && <Circle x={w/2} y={h} radius={chairR} fill={bg} stroke={strokeColor} strokeWidth={1} />}
+        {(is8 || is4) && <Circle x={0} y={h/2} radius={chairR} fill={bg} stroke={strokeColor} strokeWidth={1} />}
+        {(is8 || is4) && <Circle x={w} y={h/2} radius={chairR} fill={bg} stroke={strokeColor} strokeWidth={1} />}
+      </Group>
+    );
+  } else {
+    return (
+      <Group x={x} y={y}>
+        <Rect width={w} height={h} fill={bg} stroke={strokeColor} strokeWidth={1} />
+      </Group>
+    );
+  }
+}
 
 function getRoomColor(room) {
-  return ROOM_COLORS[room.type] || ROOM_COLORS[room.roomType] || ROOM_COLORS[room.label] || "#f3f4f6";
+  if (room.type === "Kitchen" || room?.type?.includes("Bath") || room?.roomType?.includes("Bath")) {
+    return "#f8fafc";
+  }
+  return "#ffffff";
 }
 
 function clamp(value, min, max) {
@@ -369,13 +472,42 @@ function getExternalWalls(room, allRooms, plotWidth, plotHeight) {
 /**
  * Compute the pixel position and size of a door/window element on a room boundary.
  */
+function getDoorRenderingState(wall, state, x, y, w, h) {
+  let arcX = x, arcY = y, rotation = 0;
+  let panelPoints = [];
+  const panelLen = (wall === "top" || wall === "bottom") ? w : h;
+  
+  if (wall === "bottom") {
+    if (state === 0) { arcX = x; arcY = y + h/2; rotation = -90; panelPoints = [x, y + h/2, x, y + h/2 - panelLen]; }
+    else if (state === 1) { arcX = x + w; arcY = y + h/2; rotation = 180; panelPoints = [x + w, y + h/2, x + w, y + h/2 - panelLen]; }
+    else if (state === 2) { arcX = x; arcY = y + h/2; rotation = 0; panelPoints = [x, y + h/2, x, y + h/2 + panelLen]; }
+    else if (state === 3) { arcX = x + w; arcY = y + h/2; rotation = 90; panelPoints = [x + w, y + h/2, x + w, y + h/2 + panelLen]; }
+  } else if (wall === "top") {
+    if (state === 0) { arcX = x; arcY = y + h/2; rotation = 0; panelPoints = [x, y + h/2, x, y + h/2 + panelLen]; }
+    else if (state === 1) { arcX = x + w; arcY = y + h/2; rotation = 90; panelPoints = [x + w, y + h/2, x + w, y + h/2 + panelLen]; }
+    else if (state === 2) { arcX = x; arcY = y + h/2; rotation = -90; panelPoints = [x, y + h/2, x, y + h/2 - panelLen]; }
+    else if (state === 3) { arcX = x + w; arcY = y + h/2; rotation = 180; panelPoints = [x + w, y + h/2, x + w, y + h/2 - panelLen]; }
+  } else if (wall === "left") {
+    if (state === 0) { arcX = x + w/2; arcY = y; rotation = 0; panelPoints = [x + w/2, y, x + w/2 + panelLen, y]; }
+    else if (state === 1) { arcX = x + w/2; arcY = y + h; rotation = -90; panelPoints = [x + w/2, y + h, x + w/2 + panelLen, y + h]; }
+    else if (state === 2) { arcX = x + w/2; arcY = y; rotation = 90; panelPoints = [x + w/2, y, x + w/2 - panelLen, y]; }
+    else if (state === 3) { arcX = x + w/2; arcY = y + h; rotation = 180; panelPoints = [x + w/2, y + h, x + w/2 - panelLen, y + h]; }
+  } else if (wall === "right") {
+    if (state === 0) { arcX = x + w/2; arcY = y; rotation = 90; panelPoints = [x + w/2, y, x + w/2 - panelLen, y]; }
+    else if (state === 1) { arcX = x + w/2; arcY = y + h; rotation = 180; panelPoints = [x + w/2, y + h, x + w/2 - panelLen, y + h]; }
+    else if (state === 2) { arcX = x + w/2; arcY = y; rotation = 0; panelPoints = [x + w/2, y, x + w/2 + panelLen, y]; }
+    else if (state === 3) { arcX = x + w/2; arcY = y + h; rotation = -90; panelPoints = [x + w/2, y + h, x + w/2 + panelLen, y + h]; }
+  }
+  return { arcX, arcY, rotation, panelPoints, panelLen };
+}
+
 function getElementPixelRect(element, room, plotWidth, plotHeight, stageWidth, stageHeight, depthFt) {
   const pxPerUnitX = stageWidth / plotWidth;
   const pxPerUnitY = stageHeight / plotHeight;
-  const widthPx = element.width * pxPerUnitX;
-  const depthPx = depthFt * Math.max(pxPerUnitX, pxPerUnitY);
-  const roomWPx = room.width * pxPerUnitX;
-  const roomHPx = room.height * pxPerUnitY;
+  const widthPx = Math.round(element.width * pxPerUnitX);
+  const depthPx = Math.round(depthFt * Math.max(pxPerUnitX, pxPerUnitY));
+  const roomWPx = Math.round(room.width * pxPerUnitX);
+  const roomHPx = Math.round(room.height * pxPerUnitY);
 
   let x = 0, y = 0, w = widthPx, h = depthPx;
 
@@ -408,43 +540,7 @@ function getElementPixelRect(element, room, plotWidth, plotHeight, stageWidth, s
 }
 
 
-function computeFurniturePosition(item, room, pxX, pxY) {
-  let cx = 0, cy = 0;
-  const rw = room.width * pxX;
-  const rh = room.height * pxY;
-  const fw = item.w === -1 ? rw : item.w * pxX;
-  const fh = item.h === -1 ? rh : item.h * pxY;
 
-  switch (item.anchor) {
-    case "center":
-      cx = (rw - fw) / 2; cy = (rh - fh) / 2; break;
-    case "center-top":
-      cx = (rw - fw) / 2; cy = 1 * pxY; break;
-    case "left-wall":
-      cx = 0; cy = (rh - fh) / 2; break;
-    case "right-wall":
-      cx = rw - fw; cy = (rh - fh) / 2; break;
-    case "bottom-wall":
-      cx = (rw - fw) / 2; cy = rh - fh; break;
-    case "top-wall":
-      cx = (rw - fw) / 2; cy = 0; break;
-    case "top-right":
-      cx = rw - fw; cy = 0; break;
-    case "bottom-right":
-      cx = rw - fw; cy = rh - fh; break;
-    case "center-bottom":
-      cx = (rw - fw) / 2; cy = rh - fh - (1 * pxY); break;
-    case "corner-bottom-left":
-      cx = 1 * pxX; cy = rh - fh - (1 * pxY); break;
-    case "center-sofa":
-      cx = (1 * pxX) + (7 * pxX - fw) / 2 + (1.5 * pxX); cy = rh - (5 * pxY) + (5 * pxY - fh) / 2; break;
-    case "l-shape-kitchen":
-      cx = 0; cy = 0; break;
-    default:
-      cx = 0; cy = 0;
-  }
-  return { x: cx, y: cy, w: fw, h: fh };
-}
 
 /* ── Compass component ── */
 function CompassIndicator({ frontDirection, stageWidth }) {
@@ -570,6 +666,7 @@ function GridFloorPlanEditor({
   const [selectedId, setSelectedId] = useState(null);
   const [isTransforming, setIsTransforming] = useState(false);
   const [showFurniture, setShowFurniture] = useState(false);
+  const [isPresentationMode, setIsPresentationMode] = useState(false);
   const [stageWidth, setStageWidth] = useState(960);
   const [copyFeedback, setCopyFeedback] = useState(null);
   const wrapperRef = useRef(null);
@@ -896,6 +993,17 @@ function GridFloorPlanEditor({
     });
   };
 
+  /* ── Flip Door Swing ── */
+  const flipDoor = (roomId, doorId) => {
+    const room = rooms.find((r) => r.id === roomId);
+    if (!room) return;
+    updateRoom(roomId, {
+      doors: (room.doors || []).map(d => 
+        d.id === doorId ? { ...d, swingState: ((d.swingState || 0) + 1) % 4 } : d
+      ),
+    });
+  };
+
   /* ── Remove Window ── */
   const removeWindow = (roomId, winId) => {
     const room = rooms.find((r) => r.id === roomId);
@@ -1030,38 +1138,46 @@ function GridFloorPlanEditor({
     const parentGroup = node.parent;
     if (!parentGroup) return;
 
-    const arcNode = parentGroup.findOne('Arc');
-    if (arcNode) {
+    const arcNode = parentGroup.findOne('.doorArc');
+    const panelNode = parentGroup.findOne('.doorPanel');
+    
+    if (arcNode && panelNode) {
       const rectX = node.x();
       const rectY = node.y();
       const w = node.width();
       const h = node.height();
-      const arcRadius = Math.min(w, h) * 1.5;
+      const { arcX, arcY, rotation, panelPoints, panelLen } = getDoorRenderingState(currentWall, element.swingState || 0, rectX, rectY, w, h);
       
-      let arcX = rectX, arcY = rectY, rotation = 0;
-      if (currentWall === "bottom") {
-        arcX = rectX; arcY = rectY; rotation = -90;
-      } else if (currentWall === "top") {
-        arcX = rectX + w; arcY = rectY + h; rotation = 90;
-      } else if (currentWall === "left") {
-        arcX = rectX + w; arcY = rectY; rotation = 0;
-      } else if (currentWall === "right") {
-        arcX = rectX; arcY = rectY + h; rotation = 180;
-      }
-      arcNode.setAttrs({ x: arcX, y: arcY, outerRadius: arcRadius, rotation: rotation });
+      arcNode.setAttrs({ x: arcX, y: arcY, panelLen: panelLen, rotation: rotation });
+      panelNode.points(panelPoints);
     }
 
-    const lineNode = parentGroup.findOne('Line');
-    if (lineNode) {
+    const cutoutNode = parentGroup.findOne('.cutout');
+    if (cutoutNode) {
       const rectX = node.x();
       const rectY = node.y();
       const w = node.width();
       const h = node.height();
-      
       if (currentWall === "top" || currentWall === "bottom") {
-        lineNode.points([rectX + w / 2, rectY, rectX + w / 2, rectY + h]);
+        cutoutNode.setAttrs({ x: rectX, y: rectY + h/2 - 3, width: w, height: 6 });
       } else {
-        lineNode.points([rectX, rectY + h / 2, rectX + w, rectY + h / 2]);
+        cutoutNode.setAttrs({ x: rectX + w/2 - 3, y: rectY, width: 6, height: h });
+      }
+    }
+
+    const paneNode1 = parentGroup.findOne('.pane1');
+    const paneNode2 = parentGroup.findOne('.pane2');
+    if (paneNode1 && paneNode2) {
+      const rectX = node.x();
+      const rectY = node.y();
+      const w = node.width();
+      const h = node.height();
+      if (currentWall === "top" || currentWall === "bottom") {
+        paneNode1.points([rectX, rectY + h/2 - 2, rectX + w, rectY + h/2 - 2]);
+        paneNode2.points([rectX, rectY + h/2 + 2, rectX + w, rectY + h/2 + 2]);
+      } else {
+        paneNode1.points([rectX + w/2 - 2, rectY, rectX + w/2 - 2, rectY + h]);
+        paneNode2.points([rectX + w/2 + 2, rectY, rectX + w/2 + 2, rectY + h]);
       }
     }
   };
@@ -1081,6 +1197,21 @@ function GridFloorPlanEditor({
   return (
     <div className="editor-shell">
       <div className="furniture-toggle-container">
+        <button 
+          className={`furniture-toggle-btn ${!isPresentationMode ? 'active' : ''}`}
+          onClick={() => setIsPresentationMode(false)}
+        >
+          Edit Mode
+        </button>
+        <button 
+          className={`furniture-toggle-btn ${isPresentationMode ? 'active' : ''}`}
+          onClick={() => {
+            setIsPresentationMode(true);
+            setSelectedId(null);
+          }}
+        >
+          Presentation Mode
+        </button>
         <button 
           className={`furniture-toggle-btn ${showFurniture ? 'active' : ''}`}
           onClick={() => setShowFurniture(!showFurniture)}
@@ -1112,7 +1243,7 @@ function GridFloorPlanEditor({
           }}
           width={stageWidth}
         >
-          <Layer listening={false}>
+          <Layer listening={false} opacity={isPresentationMode ? 0 : 1}>
             {gridLines}
             <Rect
               fill="transparent"
@@ -1133,10 +1264,10 @@ function GridFloorPlanEditor({
 
           <Layer>
             {rooms.map((room) => {
-              const roomWidthPx = (room.width / plotWidth) * stageWidth;
-              const roomHeightPx = (room.height / plotHeight) * stageHeight;
-              const roomX = (room.x / plotWidth) * stageWidth;
-              const roomY = (room.y / plotHeight) * stageHeight;
+              const roomWidthPx = Math.round((room.width / plotWidth) * stageWidth);
+              const roomHeightPx = Math.round((room.height / plotHeight) * stageHeight);
+              const roomX = Math.round((room.x / plotWidth) * stageWidth);
+              const roomY = Math.round((room.y / plotHeight) * stageHeight);
               const labelFontSize = Math.max(
                 10,
                 Math.min(15, roomWidthPx * 0.08, roomHeightPx * 0.2),
@@ -1190,10 +1321,10 @@ function GridFloorPlanEditor({
                       y: nextY * pixelsPerPlotUnitY,
                     };
                   }}
-                  draggable
+                  draggable={!isPresentationMode}
                   key={room.id}
-                  onClick={() => activateRoom(room.id)}
-                  onDragStart={() => activateRoom(room.id)}
+                  onClick={isPresentationMode ? undefined : () => activateRoom(room.id)}
+                  onDragStart={isPresentationMode ? undefined : () => activateRoom(room.id)}
                   onDragEnd={(event) => {
                     updateRoom(room.id, {
                       x: clamp(
@@ -1208,19 +1339,18 @@ function GridFloorPlanEditor({
                       ),
                     });
                   }}
-                  onMouseDown={() => activateRoom(room.id)}
-                  onTap={() => activateRoom(room.id)}
+                  onMouseDown={isPresentationMode ? undefined : () => activateRoom(room.id)}
+                  onTap={isPresentationMode ? undefined : () => activateRoom(room.id)}
                   ref={(node) => bindGroupRef(room.id, node)}
                   x={roomX}
                   y={roomY}
                 >
                   <Rect
                     ref={(node) => bindShapeRef(room.id, node)}
-                    cornerRadius={4}
+                    cornerRadius={0}
                     fill={isSelected ? "#fef3c7" : getRoomColor(room)}
                     height={roomHeightPx}
-                    stroke={isOverlapping ? "#ef4444" : (isSelected ? "#b45309" : "#57534e")}
-                    strokeWidth={isOverlapping ? 2 : (isSelected ? 1.5 : 1)}
+                    strokeEnabled={false}
                     width={roomWidthPx}
                     onTransformStart={() => setIsTransforming(true)}
                     onTransformEnd={(event) => {
@@ -1250,6 +1380,26 @@ function GridFloorPlanEditor({
                     }}
                   />
                   
+                  {/* ── Thick Wall Segments ── */}
+                  {(() => {
+                    const t = 1;
+                    const isTopExternal = room.y <= t;
+                    const isBottomExternal = room.y + room.height >= plotHeight - t;
+                    const isLeftExternal = room.x <= t;
+                    const isRightExternal = room.x + room.width >= plotWidth - t;
+                    
+                    const strokeColor = isOverlapping ? "#ef4444" : (isSelected ? "#b45309" : "#111827");
+                    
+                    return (
+                      <Group listening={false}>
+                        <Line points={[0, 0, roomWidthPx, 0]} stroke={strokeColor} strokeWidth={isTopExternal ? 6 : 3} lineCap="square" />
+                        <Line points={[0, roomHeightPx, roomWidthPx, roomHeightPx]} stroke={strokeColor} strokeWidth={isBottomExternal ? 6 : 3} lineCap="square" />
+                        <Line points={[0, 0, 0, roomHeightPx]} stroke={strokeColor} strokeWidth={isLeftExternal ? 6 : 3} lineCap="square" />
+                        <Line points={[roomWidthPx, 0, roomWidthPx, roomHeightPx]} stroke={strokeColor} strokeWidth={isRightExternal ? 6 : 3} lineCap="square" />
+                      </Group>
+                    );
+                  })()}
+
                   {isOverlapping && (
                     <Text
                       x={roomWidthPx / 2 - 30} y={roomHeightPx - 15}
@@ -1264,30 +1414,31 @@ function GridFloorPlanEditor({
                     <Group>
                       <Text
                         align="center"
-                        fontFamily="sans-serif"
+                        fontFamily="Inter, Roboto, sans-serif"
                         fontSize={labelFontSize}
                         fontStyle="bold"
+                        fill="#111827"
                         height={labelTextHeight}
                         listening={false}
                         padding={4}
-                        text={room.label}
+                        text={room.label.toUpperCase()}
                         verticalAlign="middle"
                         width={roomWidthPx}
                         y={labelY}
                       />
                       <Text
-                    align="center"
-                    fill="#57534e"
-                    fontFamily="sans-serif"
-                    fontSize={dimensionFontSize}
-                    height={dimensionTextHeight}
-                    listening={false}
-                    padding={2}
-                    text={`${Math.round(room.width)} × ${Math.round(room.height)} ft`}
-                    verticalAlign="middle"
-                    width={roomWidthPx}
-                    y={dimensionY}
-                  />
+                        align="center"
+                        fill="#4b5563"
+                        fontFamily="Inter, Roboto, sans-serif"
+                        fontSize={dimensionFontSize}
+                        height={dimensionTextHeight}
+                        listening={false}
+                        padding={2}
+                        text={`${Math.round(room.width)} × ${Math.round(room.height)} ft`}
+                        verticalAlign="middle"
+                        width={roomWidthPx}
+                        y={dimensionY}
+                      />
 
                   {/* ── Ventilation Warning ── */}
                   {(() => {
@@ -1311,86 +1462,26 @@ function GridFloorPlanEditor({
                     return null;
                   })()}
 
-                  {/* ── Ghost Furniture ── */}
-                  {showFurniture && GHOST_FURNITURE[room.type] && (
-                    <Group listening={false} opacity={0.6}>
-                      {GHOST_FURNITURE[room.type].map((item, i) => {
-                        const pos = computeFurniturePosition(item, room, pixelsPerPlotUnitX, pixelsPerPlotUnitY);
-                        return (
-                          <Group key={i}>
-                            {item.type === "bed" ? (
-                              <>
-                                <Rect
-                                  x={pos.x} y={pos.y}
-                                  width={pos.w} height={pos.h}
-                                  stroke="#6b7280" strokeWidth={1}
-                                  fill="rgba(243, 244, 246, 0.4)" cornerRadius={4}
-                                />
-                                <Rect
-                                  x={pos.x} y={pos.y}
-                                  width={pos.w} height={pos.h * 0.15}
-                                  fill="rgba(156, 163, 175, 0.4)" cornerRadius={2}
-                                />
-                              </>
-                            ) : item.type === "l-sofa" ? (
-                              <>
-                                <Rect
-                                  x={pos.x} y={pos.y}
-                                  width={pos.w} height={pos.h * 0.4}
-                                  stroke="#6b7280" strokeWidth={1}
-                                  fill="rgba(243, 244, 246, 0.4)" cornerRadius={4}
-                                />
-                                <Rect
-                                  x={pos.x} y={pos.y}
-                                  width={pos.w * 0.4} height={pos.h}
-                                  stroke="#6b7280" strokeWidth={1}
-                                  fill="rgba(243, 244, 246, 0.4)" cornerRadius={4}
-                                />
-                              </>
-                            ) : item.type === "l-counter" ? (
-                              <>
-                                <Rect
-                                  x={pos.x} y={pos.y + pos.h - (2 * pixelsPerPlotUnitY)}
-                                  width={pos.w} height={2 * pixelsPerPlotUnitY}
-                                  fill="rgba(209, 213, 219, 0.5)" stroke="#9ca3af" strokeWidth={1}
-                                />
-                                <Rect
-                                  x={pos.x} y={pos.y}
-                                  width={2 * pixelsPerPlotUnitX} height={pos.h}
-                                  fill="rgba(209, 213, 219, 0.5)" stroke="#9ca3af" strokeWidth={1}
-                                />
-                              </>
-                            ) : (
-                              <Rect
-                                x={pos.x} y={pos.y}
-                                width={pos.w} height={pos.h}
-                                stroke="#6b7280"
-                                strokeWidth={1}
-                                fill="rgba(243, 244, 246, 0.4)"
-                                cornerRadius={3}
-                              />
-                            )}
-                            {item.type !== "l-counter" && (
-                              <Text
-                                x={pos.x} y={pos.y}
-                                width={pos.w} height={pos.h}
-                                text={item.label}
-                                align="center"
-                                verticalAlign="middle"
-                                fontSize={Math.max(7, Math.min(10, roomWidthPx * 0.05))}
-                                fill="#4b5563"
-                                fontFamily="sans-serif"
-                              />
-                            )}
-                          </Group>
-                        );
-                      })}
+                  {/* ── Dynamic Deterministic Furniture ── */}
+                  {showFurniture && (
+                    <Group listening={false} opacity={0.8}>
+                      {placeFurniture(room).map((item, i) => (
+                        <FurniturePiece 
+                          key={i} 
+                          item={item} 
+                          pxX={pixelsPerPlotUnitX} 
+                          pxY={pixelsPerPlotUnitY} 
+                        />
+                      ))}
                     </Group>
                   )}
 
                   {/* ── Doors ── */}
                   {(room.doors || []).map((door) => {
                     const rect = getElementPixelRect(door, room, plotWidth, plotHeight, stageWidth, stageHeight, DOOR_DEPTH_FT);
+                    const isHorizontal = door.wall === "top" || door.wall === "bottom";
+                    const { arcX, arcY, rotation, panelPoints, panelLen } = getDoorRenderingState(door.wall, door.swingState || 0, rect.x, rect.y, rect.w, rect.h);
+
                     return (
                       <Group key={door.id}>
                         <Rect
@@ -1398,50 +1489,74 @@ function GridFloorPlanEditor({
                           y={rect.y}
                           width={rect.w}
                           height={rect.h}
-                          fill="#ffffff"
-                          stroke="#b45309"
-                          strokeWidth={1.5}
-                          cornerRadius={1}
+                          fill="transparent"
                           draggable
                           dragBoundFunc={(pos) => getElementDragBound(pos, door, room, DOOR_DEPTH_FT)}
-                          onDragMove={(e) => handleElementDragMove(e, door, room, DOOR_DEPTH_FT)}
+                          onMouseEnter={(e) => {
+                            const stage = e.target.getStage();
+                            if (stage) stage.container().style.cursor = "grab";
+                            e.target.setAttrs({ stroke: "rgba(59, 130, 246, 0.5)", strokeWidth: 4, cornerRadius: 4 });
+                          }}
+                          onMouseLeave={(e) => {
+                            const stage = e.target.getStage();
+                            if (stage) stage.container().style.cursor = "default";
+                            e.target.setAttrs({ stroke: null, strokeWidth: 0, cornerRadius: 0 });
+                          }}
+                          onDragStart={(e) => { e.cancelBubble = true; }}
+                          onDragMove={(e) => {
+                            e.cancelBubble = true;
+                            handleElementDragMove(e, door, room, DOOR_DEPTH_FT);
+                          }}
                           onDragEnd={(e) => {
+                            e.cancelBubble = true;
                             handleElementDragEnd(e, door, room, updateDoorState);
-                            // Reset local position (state drives rendering)
                             e.target.position({ x: rect.x, y: rect.y });
                           }}
-                          onDblClick={() => removeDoor(room.id, door.id)}
-                          onDblTap={() => removeDoor(room.id, door.id)}
+                          onClick={(e) => {
+                            e.cancelBubble = true;
+                            flipDoor(room.id, door.id);
+                          }}
+                          onDblClick={(e) => {
+                            e.cancelBubble = true;
+                            removeDoor(room.id, door.id);
+                          }}
+                          onDblTap={(e) => {
+                            e.cancelBubble = true;
+                            removeDoor(room.id, door.id);
+                          }}
                         />
-                        {/* Door swing arc indicator */}
-                        {(() => {
-                          const arcRadius = Math.min(rect.w, rect.h) * 1.5;
-                          let arcX = rect.x, arcY = rect.y, rotation = 0;
-                          if (door.wall === "bottom") {
-                            arcX = rect.x; arcY = rect.y; rotation = -90;
-                          } else if (door.wall === "top") {
-                            arcX = rect.x + rect.w; arcY = rect.y + rect.h; rotation = 90;
-                          } else if (door.wall === "left") {
-                            arcX = rect.x + rect.w; arcY = rect.y; rotation = 0;
-                          } else if (door.wall === "right") {
-                            arcX = rect.x; arcY = rect.y + rect.h; rotation = 180;
-                          }
-                          return (
-                            <Arc
-                              x={arcX}
-                              y={arcY}
-                              innerRadius={0}
-                              outerRadius={arcRadius}
-                              angle={90}
-                              rotation={rotation}
-                              fill="rgba(180,83,9,0.08)"
-                              stroke="#b45309"
-                              strokeWidth={0.5}
-                              dash={[2, 2]}
-                              listening={false}
-                            />
-                          );
-                        })()}
+                        <Group listening={false}>
+                          <Rect
+                            name="cutout"
+                            x={isHorizontal ? rect.x : rect.x + rect.w/2 - 3}
+                            y={isHorizontal ? rect.y + rect.h/2 - 3 : rect.y}
+                            width={isHorizontal ? rect.w : 6}
+                            height={isHorizontal ? 6 : rect.h}
+                            fill="#ffffff"
+                          />
+                          <Line
+                            name="doorPanel"
+                            points={panelPoints}
+                            stroke="#111827"
+                            strokeWidth={3}
+                            lineCap="round"
+                          />
+                          <Shape
+                            name="doorArc"
+                            x={arcX}
+                            y={arcY}
+                            panelLen={panelLen}
+                            rotation={rotation}
+                            sceneFunc={(context, shape) => {
+                              context.beginPath();
+                              context.arc(0, 0, shape.getAttr('panelLen'), 0, Math.PI / 2, false);
+                              context.strokeShape(shape);
+                            }}
+                            stroke="#6b7280"
+                            strokeWidth={1.5}
+                            dash={[4, 4]}
+                          />
+                        </Group>
                       </Group>
                     );
                   })}
@@ -1457,35 +1572,79 @@ function GridFloorPlanEditor({
                           y={rect.y}
                           width={rect.w}
                           height={rect.h}
-                          fill="#dbeafe"
-                          stroke="#2563eb"
-                          strokeWidth={1.2}
+                          fill="transparent"
                           draggable
                           dragBoundFunc={(pos) => getElementDragBound(pos, win, room, WINDOW_DEPTH_FT)}
-                          onDragMove={(e) => handleElementDragMove(e, win, room, WINDOW_DEPTH_FT)}
+                          onMouseEnter={(e) => {
+                            const stage = e.target.getStage();
+                            if (stage) stage.container().style.cursor = "grab";
+                            e.target.setAttrs({ stroke: "rgba(59, 130, 246, 0.5)", strokeWidth: 4, cornerRadius: 4 });
+                          }}
+                          onMouseLeave={(e) => {
+                            const stage = e.target.getStage();
+                            if (stage) stage.container().style.cursor = "default";
+                            e.target.setAttrs({ stroke: null, strokeWidth: 0, cornerRadius: 0 });
+                          }}
+                          onDragStart={(e) => { e.cancelBubble = true; }}
+                          onDragMove={(e) => {
+                            e.cancelBubble = true;
+                            handleElementDragMove(e, win, room, WINDOW_DEPTH_FT);
+                          }}
                           onDragEnd={(e) => {
+                            e.cancelBubble = true;
                             handleElementDragEnd(e, win, room, updateWindowState);
                             e.target.position({ x: rect.x, y: rect.y });
                           }}
-                          onDblClick={() => removeWindow(room.id, win.id)}
-                          onDblTap={() => removeWindow(room.id, win.id)}
+                          onDblClick={(e) => {
+                            e.cancelBubble = true;
+                            removeWindow(room.id, win.id);
+                          }}
+                          onDblTap={(e) => {
+                            e.cancelBubble = true;
+                            removeWindow(room.id, win.id);
+                          }}
                         />
-                        {/* Window pane lines */}
-                        {isHorizontal ? (
-                          <Line
-                            points={[rect.x + rect.w / 2, rect.y, rect.x + rect.w / 2, rect.y + rect.h]}
-                            stroke="#2563eb"
-                            strokeWidth={0.8}
-                            listening={false}
+                        <Group listening={false}>
+                          <Rect
+                            name="cutout"
+                            x={isHorizontal ? rect.x : rect.x + rect.w/2 - 3}
+                            y={isHorizontal ? rect.y + rect.h/2 - 3 : rect.y}
+                            width={isHorizontal ? rect.w : 6}
+                            height={isHorizontal ? 6 : rect.h}
+                            fill="#ffffff"
                           />
-                        ) : (
-                          <Line
-                            points={[rect.x, rect.y + rect.h / 2, rect.x + rect.w, rect.y + rect.h / 2]}
-                            stroke="#2563eb"
-                            strokeWidth={0.8}
-                            listening={false}
+                          <Rect
+                            name="glassBody"
+                            x={isHorizontal ? rect.x : rect.x + rect.w/2 - 4}
+                            y={isHorizontal ? rect.y + rect.h/2 - 4 : rect.y}
+                            width={isHorizontal ? rect.w : 8}
+                            height={isHorizontal ? 8 : rect.h}
+                            fill="#38bdf8"
+                            cornerRadius={2}
+                            shadowColor="#0284c7"
+                            shadowBlur={5}
+                            shadowOpacity={0.6}
+                            shadowOffsetY={2}
                           />
-                        )}
+                          <Line
+                            name="pane1"
+                            points={isHorizontal ? 
+                              [rect.x + 2, rect.y + rect.h/2 - 1.5, rect.x + rect.w - 2, rect.y + rect.h/2 - 1.5] : 
+                              [rect.x + rect.w/2 - 1.5, rect.y + 2, rect.x + rect.w/2 - 1.5, rect.y + rect.h - 2]}
+                            stroke="#ffffff"
+                            strokeWidth={1.5}
+                            opacity={0.8}
+                          />
+                          <Line
+                            name="pane2"
+                            points={isHorizontal ? 
+                              [rect.x + 2, rect.y + rect.h/2 + 1.5, rect.x + rect.w - 2, rect.y + rect.h/2 + 1.5] : 
+                              [rect.x + rect.w/2 + 1.5, rect.y + 2, rect.x + rect.w/2 + 1.5, rect.y + rect.h - 2]}
+                            stroke="#ffffff"
+                            strokeWidth={1.5}
+                            opacity={0.8}
+                          />
+                        </Group>
                       </Group>
                     );
                   })}
@@ -1533,7 +1692,7 @@ function GridFloorPlanEditor({
       </div>
 
       {/* ── Room Selection Panel ── */}
-      {selectedRoom && (
+      {selectedRoom && !isPresentationMode && (
         <div className="room-actions-panel">
           <div className="room-actions-header">
             <span className="room-actions-title">{selectedRoom.label}</span>
@@ -1572,13 +1731,14 @@ function GridFloorPlanEditor({
               {(selectedRoom.doors || []).map((door) => (
                 <span className="room-element-tag door-tag" key={door.id}>
                   🚪 {door.wall}
-                  <button className="remove-element-btn" onClick={() => removeDoor(selectedRoom.id, door.id)} title="Remove door">×</button>
+                  <button className="action-icon-btn" onClick={() => flipDoor(selectedRoom.id, door.id)} title="Flip door swing">🔄</button>
+                  <button className="action-icon-btn remove-btn" onClick={() => removeDoor(selectedRoom.id, door.id)} title="Remove door">×</button>
                 </span>
               ))}
               {(selectedRoom.windows || []).map((win) => (
                 <span className="room-element-tag window-tag" key={win.id}>
                   🪟 {win.wall}
-                  <button className="remove-element-btn" onClick={() => removeWindow(selectedRoom.id, win.id)} title="Remove window">×</button>
+                  <button className="action-icon-btn remove-btn" onClick={() => removeWindow(selectedRoom.id, win.id)} title="Remove window">×</button>
                 </span>
               ))}
             </div>
@@ -1588,8 +1748,9 @@ function GridFloorPlanEditor({
       )}
 
       {/* ── Add Room Toolbar ── */}
-      <div className="add-room-toolbar">
-        <div className="toolbar-header">
+      {!isPresentationMode && (
+        <div className="add-room-toolbar">
+          <div className="toolbar-header">
           <span className="toolbar-title">Add Room</span>
           <button
             className={`copy-schema-btn ${copyFeedback ? "success" : ""}`}
@@ -1616,7 +1777,8 @@ function GridFloorPlanEditor({
             </div>
           </div>
         ))}
-      </div>
+        </div>
+      )}
     </div>
   );
 }

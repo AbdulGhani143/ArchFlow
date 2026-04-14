@@ -208,11 +208,11 @@ select {
 .room-element-tag {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  padding: 3px 8px;
-  border-radius: 6px;
-  font-size: 0.75rem;
-  font-weight: 500;
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  font-size: 0.85rem;
+  font-weight: 600;
 }
 
 .room-element-tag.door-tag {
@@ -227,20 +227,30 @@ select {
   color: #1e40af;
 }
 
-.remove-element-btn {
-  background: none;
+.action-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.05);
   border: none;
-  padding: 0 2px;
-  font-size: 0.85rem;
-  font-weight: 700;
+  font-size: 1rem;
   cursor: pointer;
   color: inherit;
-  opacity: 0.6;
-  transition: opacity 0.15s;
+  transition: all 0.2s;
+  padding: 0;
 }
 
-.remove-element-btn:hover {
-  opacity: 1;
+.action-icon-btn:hover {
+  background: rgba(0, 0, 0, 0.15);
+  transform: scale(1.05);
+}
+
+.action-icon-btn.remove-btn:hover {
+  background: #fecaca;
+  color: #dc2626;
 }
 
 .room-actions-hint {
