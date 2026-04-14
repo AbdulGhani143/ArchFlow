@@ -1,0 +1,16 @@
+{
+  "name": "floor-plan-poc",
+  "private": true,
+  "workspaces": [
+    "backend",
+    "frontend"
+  ],
+  "scripts": {
+    "dev:backend": "npm run dev -w backend",
+    "dev:frontend": "npm run dev -w frontend",
+    "start": "npm run start -w backend",
+    "build": "npm run build -w frontend",
+    "test": "npm test -w backend"
+  }
+}
+
