@@ -182,108 +182,125 @@ function App() {
 
   return (
     <main className="app-shell">
-      <section className="controls">
+      <section className="controls sidebar-shell">
+        <div className="sidebar-project">
+          <h2>Project Alpha</h2>
+          <p>Residential Plan</p>
+        </div>
+
         <h1>Interactive Floor Plan Editor</h1>
         <p className="message">
           Choose the plot and room counts, generate the starting layout, then
           fine-tune it directly on the canvas.
         </p>
 
-        <form onSubmit={handleSubmit}>
-          <label>
-            Plot Size (Gaj)
-            <input
-              max="400"
-              min="100"
-              name="plotGaj"
-              onChange={handleChange}
-              step="1"
-              type="number"
-              value={form.plotGaj}
-            />
-          </label>
+        <form onSubmit={handleSubmit} className="sidebar-form">
+          <div className="sidebar-card">
+            <h3 className="sidebar-card-title">Plot Configuration</h3>
+            <label>
+              Plot Size (Gaj)
+              <input
+                max="400"
+                min="100"
+                name="plotGaj"
+                onChange={handleChange}
+                step="1"
+                type="number"
+                value={form.plotGaj}
+              />
+            </label>
 
-          <label>
-            Plot Shape
-            <select name="plotShape" onChange={handleChange} value={form.plotShape}>
-              <option value="square">Square</option>
-              <option value="rectangle">Rectangle</option>
-              <option value="deep-rectangle">Deep Rectangle</option>
-            </select>
-          </label>
+            <label>
+              Plot Shape
+              <select name="plotShape" onChange={handleChange} value={form.plotShape}>
+                <option value="square">Square</option>
+                <option value="rectangle">Rectangle</option>
+                <option value="deep-rectangle">Deep Rectangle</option>
+              </select>
+            </label>
 
-          <label>
-            Dwelling Type
-            <select name="dwellingType" onChange={handleChange} value={form.dwellingType}>
-              <option value="house">House</option>
-              <option value="flat">Flat / Building Floor</option>
-            </select>
-          </label>
-
-          <label>
-            Bedrooms
-            <input
-              max="6"
-              min="1"
-              name="bedrooms"
-              onChange={handleChange}
-              step="1"
-              type="number"
-              value={form.bedrooms}
-            />
-          </label>
-
-          <label>
-            Bathrooms
-            <input
-              max="4"
-              min="1"
-              name="bathrooms"
-              onChange={handleChange}
-              step="1"
-              type="number"
-              value={form.bathrooms}
-            />
-          </label>
-
-          <label>
-            Front Direction
-            <select name="frontDirection" onChange={handleChange} value={form.frontDirection}>
-              <option value="north">North</option>
-              <option value="east">East</option>
-              <option value="south">South</option>
-              <option value="west">West</option>
-            </select>
-          </label>
-          
-          <div className="boundary-toggles">
-            <span className="boundary-toggles-label">Plot Boundaries</span>
-            <p className="boundary-toggles-hint">Mark sides as blocked by neighbors or open for ventilation</p>
-            {["north", "east", "south", "west"].map(dir => (
-              boundaries[dir] !== "front" && (
-                <button
-                  key={dir}
-                  type="button"
-                  className={`boundary-toggle-btn ${boundaries[dir]}`}
-                  onClick={() => handleBoundaryToggle(dir)}
-                >
-                  <span className="dir-label">{dir.charAt(0).toUpperCase() + dir.slice(1)} Side:</span>
-                  <span className="status-label">
-                    {boundaries[dir] === "covered" ? "🧱 Covered" : "🌬️ Open"}
-                  </span>
-                </button>
-              )
-            ))}
+            <label>
+              Front Direction
+              <select name="frontDirection" onChange={handleChange} value={form.frontDirection}>
+                <option value="north">North</option>
+                <option value="east">East</option>
+                <option value="south">South</option>
+                <option value="west">West</option>
+              </select>
+            </label>
           </div>
 
-          <div className="engine-toggle" style={{ marginTop: '1.5rem', padding: '1rem', background: '#eef2ff', border: '1px solid #c7d2fe', borderRadius: '4px' }}>
-            <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', margin: 0 }}>
+          <div className="sidebar-card">
+            <h3 className="sidebar-card-title">Room Requirements</h3>
+            <label>
+              Dwelling Type
+              <select name="dwellingType" onChange={handleChange} value={form.dwellingType}>
+                <option value="house">House</option>
+                <option value="flat">Flat / Building Floor</option>
+              </select>
+            </label>
+
+            <label>
+              Bedrooms
+              <input
+                max="6"
+                min="1"
+                name="bedrooms"
+                onChange={handleChange}
+                step="1"
+                type="number"
+                value={form.bedrooms}
+              />
+            </label>
+
+            <label>
+              Bathrooms
+              <input
+                max="4"
+                min="1"
+                name="bathrooms"
+                onChange={handleChange}
+                step="1"
+                type="number"
+                value={form.bathrooms}
+              />
+            </label>
+          </div>
+
+          <div className="sidebar-card">
+            <h3 className="sidebar-card-title">Plot Boundaries</h3>
+            <div className="boundary-toggles">
+              <p className="boundary-toggles-hint">Mark sides as blocked by neighbors or open for ventilation</p>
+              <p className="boundary-front-note">
+                Front side is controlled by Front Direction and remains locked.
+              </p>
+              {["north", "east", "south", "west"].map(dir => (
+                boundaries[dir] !== "front" && (
+                  <button
+                    key={dir}
+                    type="button"
+                    className={`boundary-toggle-btn ${boundaries[dir]}`}
+                    onClick={() => handleBoundaryToggle(dir)}
+                  >
+                    <span className="dir-label">{dir.charAt(0).toUpperCase() + dir.slice(1)} Side:</span>
+                    <span className={`status-label ${boundaries[dir]}`}>
+                      {boundaries[dir] === "covered" ? "Covered" : "Open"}
+                    </span>
+                  </button>
+                )
+              ))}
+            </div>
+          </div>
+
+          <div className="sidebar-card engine-toggle">
+            <h3 className="sidebar-card-title">Engine</h3>
+            <label className="engine-toggle-label">
               <strong>Layout Engine</strong>
               <select
                 name="engine"
                 value={form.engine}
                 onChange={handleChange}
-                style={{ padding: '6px 10px', borderRadius: '4px', border: '1px solid #c7d2fe' }}
+                className="engine-toggle-select"
               >
                 <option value="v1">V1 — Rule-based (Stable)</option>
                 <option value="v2">V2 — Smart Matrix (Beta)</option>
@@ -292,10 +309,11 @@ function App() {
             </label>
           </div>
 
-          <button type="submit">Generate Layout</button>
+          <button type="submit" className="sidebar-primary-cta">Generate Layout</button>
         </form>
 
-        <div className="import-container" style={{ marginTop: '1rem' }}>
+        <div className="import-container sidebar-card">
+          <h3 className="sidebar-card-title">Import / Export</h3>
           <button 
             type="button" 
             className="toggle-import-btn"
@@ -327,7 +345,8 @@ function App() {
         {isLoading ? <p className="message">Generating initial layout...</p> : null}
         {error ? <p className="message error">{error}</p> : null}
 
-        <div className="spec-list">
+        <div className="spec-list sidebar-card">
+          <h3 className="sidebar-card-title">Current Plot</h3>
           <p>Current plot: {plot.plotGaj ?? form.plotGaj} Gaj</p>
           <p>Shape: {plot.plotShape ?? form.plotShape}</p>
           <p>

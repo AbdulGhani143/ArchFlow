@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { Group, Layer, Line, Rect, Stage, Text, Transformer, Arc, Shape } from "react-konva";
+import { Circle, Group, Layer, Line, Rect, Shape, Stage, Text, Transformer } from "react-konva";
 
 const BASE_GRID_CELLS = 256;
 const CELLS_PER_FOOT = 4;
@@ -211,6 +211,187 @@ function getRoomColor(room) {
     return "#f8fafc";
   }
   return "#ffffff";
+}
+
+function toTitleCase(value) {
+  if (!value) return "";
+  return value.charAt(0).toUpperCase() + value.slice(1);
+}
+
+function formatPlotSize(value) {
+  const feet = Math.floor(value);
+  const inches = Math.round((value - feet) * 12);
+
+  if (inches === 0) return `${feet} ft`;
+  return `${feet} ft ${inches} in`;
+}
+
+function detectTexture(roomType) {
+  if (!roomType) return "none";
+
+  if (
+    roomType.includes("Hall") ||
+    roomType.includes("Living") ||
+    roomType.includes("Dining") ||
+    roomType.includes("Kitchen")
+  ) {
+    return "planks";
+  }
+
+  if (roomType.includes("Bath") || roomType.includes("Toilet") || roomType.includes("Shaft")) {
+    return "tiles";
+  }
+
+  if (roomType.includes("Bedroom") || roomType.includes("Guest")) {
+    return "carpet";
+  }
+
+  if (
+    roomType.includes("Yard") ||
+    roomType.includes("Balcony") ||
+    roomType.includes("Courtyard") ||
+    roomType.includes("Utility")
+  ) {
+    return "garden";
+  }
+
+  return "none";
+}
+
+function roomTextureLines(texture, roomWidthPx, roomHeightPx) {
+  if (texture === "none") return null;
+
+  if (texture === "planks") {
+    const gap = Math.max(9, Math.round(roomHeightPx / 11));
+    const lines = [];
+    for (let y = gap; y < roomHeightPx; y += gap) {
+      lines.push(
+        <Line
+          key={`plank-${y}`}
+          listening={false}
+          points={[0, y, roomWidthPx, y]}
+          stroke="#b89d7f"
+          strokeWidth={0.85}
+          opacity={0.6}
+        />,
+      );
+    }
+    return lines;
+  }
+
+  if (texture === "tiles") {
+    const step = Math.max(12, Math.round(Math.min(roomWidthPx, roomHeightPx) / 5));
+    const lines = [];
+
+    for (let x = step; x < roomWidthPx; x += step) {
+      lines.push(
+        <Line
+          key={`tile-x-${x}`}
+          listening={false}
+          points={[x, 0, x, roomHeightPx]}
+          stroke="#8ca6b0"
+          strokeWidth={0.75}
+          opacity={0.55}
+        />,
+      );
+    }
+
+    for (let y = step; y < roomHeightPx; y += step) {
+      lines.push(
+        <Line
+          key={`tile-y-${y}`}
+          listening={false}
+          points={[0, y, roomWidthPx, y]}
+          stroke="#8ca6b0"
+          strokeWidth={0.75}
+          opacity={0.55}
+        />,
+      );
+    }
+
+    return lines;
+  }
+
+  if (texture === "carpet") {
+    const step = Math.max(14, Math.round(Math.min(roomWidthPx, roomHeightPx) / 6));
+    const lines = [];
+    for (let i = -roomHeightPx; i < roomWidthPx + roomHeightPx; i += step) {
+      lines.push(
+        <Line
+          key={`carpet-${i}`}
+          listening={false}
+          points={[i, roomHeightPx, i + roomHeightPx, 0]}
+          stroke="#baa996"
+          strokeWidth={0.7}
+          opacity={0.5}
+        />,
+      );
+    }
+    return lines;
+  }
+
+  if (texture === "garden") {
+    const step = Math.max(10, Math.round(Math.min(roomWidthPx, roomHeightPx) / 7));
+    const lines = [];
+    for (let i = -roomHeightPx; i < roomWidthPx + roomHeightPx; i += step) {
+      lines.push(
+        <Line
+          key={`garden-a-${i}`}
+          listening={false}
+          points={[i, 0, i + roomHeightPx, roomHeightPx]}
+          stroke="#7e9d73"
+          strokeWidth={0.7}
+          opacity={0.32}
+        />,
+      );
+      lines.push(
+        <Line
+          key={`garden-b-${i}`}
+          listening={false}
+          points={[i, roomHeightPx, i + roomHeightPx, 0]}
+          stroke="#7e9d73"
+          strokeWidth={0.7}
+          opacity={0.32}
+        />,
+      );
+    }
+    return lines;
+  }
+
+  return null;
+}
+
+function getRoomPresentationStyle(room, isPresentationMode, isSelected, isOverlapping) {
+  const roomType = room.type || room.roomType || "";
+
+  if (!isPresentationMode) {
+    return {
+      fill: isSelected ? "#fef3c7" : getRoomColor(room),
+      wallStroke: isOverlapping ? "#ef4444" : (isSelected ? "#b45309" : "#111827"),
+      labelColor: "#111827",
+      dimensionColor: "#4b5563",
+      texture: "none",
+    };
+  }
+
+  let fill = "#f2ecdf";
+  if (roomType.includes("Hall") || roomType.includes("Living") || roomType.includes("Dining")) fill = "#d8c4a5";
+  else if (roomType.includes("Kitchen")) fill = "#d9cab6";
+  else if (roomType.includes("Bath") || roomType.includes("Toilet") || roomType.includes("Shaft")) fill = "#d9e4e8";
+  else if (roomType.includes("Bedroom") || roomType.includes("Guest")) fill = "#e6ded0";
+  else if (roomType.includes("Yard") || roomType.includes("Balcony") || roomType.includes("Courtyard")) fill = "#d6e2c9";
+  else if (roomType.includes("Parking")) fill = "#d0d4d8";
+
+  if (isSelected) fill = "#f4e1b0";
+  if (isOverlapping) fill = "#f7cccc";
+
+  return {
+    fill,
+    wallStroke: isOverlapping ? "#b91c1c" : "#2a2015",
+    labelColor: "#2f2518",
+    dimensionColor: "#5a4a38",
+    texture: detectTexture(roomType),
+  };
 }
 
 function clamp(value, min, max) {
@@ -707,6 +888,33 @@ function GridFloorPlanEditor({
   const pixelsPerPlotUnitX = stageWidth / plotWidth;
   const pixelsPerPlotUnitY = stageHeight / plotHeight;
 
+  const planSummary = useMemo(() => {
+    const openSides = Object.entries(boundaries)
+      .filter(([, status]) => status === "open")
+      .map(([direction]) => toTitleCase(direction));
+    const coveredSides = Object.entries(boundaries)
+      .filter(([, status]) => status === "covered")
+      .map(([direction]) => toTitleCase(direction));
+
+    const bedrooms = rooms.filter((room) => (room.type || "").includes("Bedroom") || (room.type || "").includes("Guest")).length;
+    const bathrooms = rooms.filter((room) => (room.type || "").includes("Bath") || (room.type || "").includes("Toilet")).length;
+
+    return {
+      totalAreaSqFt: Math.round(plotWidth * plotHeight),
+      roomCount: rooms.length,
+      bedrooms,
+      bathrooms,
+      openSides,
+      coveredSides,
+    };
+  }, [boundaries, plotHeight, plotWidth, rooms]);
+
+  useEffect(() => {
+    if (isPresentationMode && !showFurniture) {
+      setShowFurniture(true);
+    }
+  }, [isPresentationMode, showFurniture]);
+
   /* When the backend returns a new layout, hydrate it immediately.
      This is the "algorithm-first" rule: whatever the backend returns
      completely replaces the canvas state. */
@@ -1195,7 +1403,7 @@ function GridFloorPlanEditor({
   })).filter((cat) => cat.rooms.length > 0);
 
   return (
-    <div className="editor-shell">
+    <div className={`editor-shell ${isPresentationMode ? "presentation-sheet" : ""}`}>
       <div className="furniture-toggle-container">
         <button 
           className={`furniture-toggle-btn ${!isPresentationMode ? 'active' : ''}`}
@@ -1219,8 +1427,16 @@ function GridFloorPlanEditor({
           {showFurniture ? "🪑 Hide Furniture" : "🪑 Show Furniture"}
         </button>
       </div>
+      {isPresentationMode && (
+        <div className="presentation-header">
+          <h3>The Modernist Residence</h3>
+          <p>
+            {formatPlotSize(plotWidth)} x {formatPlotSize(plotHeight)} | Front: {toTitleCase(frontDirection)} | {planSummary.totalAreaSqFt} sq ft
+          </p>
+        </div>
+      )}
       <div
-        className="editor-canvas"
+        className={`editor-canvas ${isPresentationMode ? "presentation-canvas" : ""}`}
         onClick={(event) => {
           if (event.target === event.currentTarget) {
             setSelectedId(null);
@@ -1243,12 +1459,116 @@ function GridFloorPlanEditor({
           }}
           width={stageWidth}
         >
-          <Layer listening={false} opacity={isPresentationMode ? 0 : 1}>
+          <Layer listening={false}>
+            <Rect
+              fill={isPresentationMode ? "#f0e8da" : "#ffffff"}
+              height={stageHeight}
+              width={stageWidth}
+              x={0}
+              y={0}
+            />
+            {isPresentationMode && (
+              <>
+                <Rect
+                  x={8}
+                  y={8}
+                  width={stageWidth - 16}
+                  height={stageHeight - 16}
+                  stroke="#4f4335"
+                  strokeWidth={1.8}
+                  listening={false}
+                />
+                <Text
+                  x={20}
+                  y={16}
+                  text="RESIDENTIAL PLAN"
+                  fontFamily="Cinzel, serif"
+                  fontSize={15}
+                  fontStyle="bold"
+                  fill="#33291f"
+                  listening={false}
+                />
+                <Rect
+                  x={stageWidth - 230}
+                  y={18}
+                  width={208}
+                  height={120}
+                  fill="rgba(255, 251, 245, 0.92)"
+                  stroke="#7f6f5a"
+                  strokeWidth={1}
+                  listening={false}
+                />
+                <Text
+                  x={stageWidth - 220}
+                  y={28}
+                  width={188}
+                  text="LEGEND"
+                  fontFamily="Cinzel, serif"
+                  fontSize={12}
+                  fontStyle="bold"
+                  fill="#33291f"
+                  listening={false}
+                />
+                <Text
+                  x={stageWidth - 220}
+                  y={47}
+                  width={188}
+                  text={`Rooms: ${planSummary.roomCount}`}
+                  fontFamily="Manrope, sans-serif"
+                  fontSize={10}
+                  fill="#4f4438"
+                  listening={false}
+                />
+                <Text
+                  x={stageWidth - 220}
+                  y={62}
+                  width={188}
+                  text={`Bedrooms: ${planSummary.bedrooms} | Baths: ${planSummary.bathrooms}`}
+                  fontFamily="Manrope, sans-serif"
+                  fontSize={10}
+                  fill="#4f4438"
+                  listening={false}
+                />
+                <Text
+                  x={stageWidth - 220}
+                  y={77}
+                  width={188}
+                  text={`Open Sides: ${planSummary.openSides.join(", ") || "None"}`}
+                  fontFamily="Manrope, sans-serif"
+                  fontSize={10}
+                  fill="#4f4438"
+                  listening={false}
+                />
+                <Text
+                  x={stageWidth - 220}
+                  y={92}
+                  width={188}
+                  text={`Covered: ${planSummary.coveredSides.join(", ") || "None"}`}
+                  fontFamily="Manrope, sans-serif"
+                  fontSize={10}
+                  fill="#4f4438"
+                  listening={false}
+                />
+                <Text
+                  x={stageWidth - 220}
+                  y={107}
+                  width={188}
+                  text="Scale: 1 unit = 1 ft"
+                  fontFamily="Manrope, sans-serif"
+                  fontSize={10}
+                  fill="#4f4438"
+                  listening={false}
+                />
+              </>
+            )}
+          </Layer>
+
+          <Layer listening={false} opacity={isPresentationMode ? 0.16 : 1}>
             {gridLines}
             <Rect
               fill="transparent"
               height={stageHeight}
-              stroke="black"
+              stroke={isPresentationMode ? "#6d5d4b" : "black"}
               strokeWidth={1.2}
               width={stageWidth}
               x={0}
@@ -1302,6 +1622,8 @@ function GridFloorPlanEditor({
                 }
               }
 
+              const roomVisual = getRoomPresentationStyle(room, isPresentationMode, isSelected, isOverlapping);
+
               return (
                 <Group
                   dragBoundFunc={(position) => {
@@ -1348,7 +1670,7 @@ function GridFloorPlanEditor({
                   <Rect
                     ref={(node) => bindShapeRef(room.id, node)}
                     cornerRadius={0}
-                    fill={isSelected ? "#fef3c7" : getRoomColor(room)}
+                    fill={roomVisual.fill}
                     height={roomHeightPx}
                     strokeEnabled={false}
                     width={roomWidthPx}
@@ -1379,6 +1701,12 @@ function GridFloorPlanEditor({
                       setIsTransforming(false);
                     }}
                   />
+
+                  {isPresentationMode && (
+                    <Group listening={false} opacity={0.85}>
+                      {roomTextureLines(roomVisual.texture, roomWidthPx, roomHeightPx)}
+                    </Group>
+                  )}
                   
                   {/* ── Thick Wall Segments ── */}
                   {(() => {
@@ -1388,7 +1716,7 @@ function GridFloorPlanEditor({
                     const isLeftExternal = room.x <= t;
                     const isRightExternal = room.x + room.width >= plotWidth - t;
                     
-                    const strokeColor = isOverlapping ? "#ef4444" : (isSelected ? "#b45309" : "#111827");
+                    const strokeColor = roomVisual.wallStroke;
                     
                     return (
                       <Group listening={false}>
@@ -1414,10 +1742,10 @@ function GridFloorPlanEditor({
                     <Group>
                       <Text
                         align="center"
-                        fontFamily="Inter, Roboto, sans-serif"
+                        fontFamily={isPresentationMode ? "Cinzel, serif" : "Manrope, sans-serif"}
                         fontSize={labelFontSize}
                         fontStyle="bold"
-                        fill="#111827"
+                        fill={roomVisual.labelColor}
                         height={labelTextHeight}
                         listening={false}
                         padding={4}
@@ -1428,8 +1756,8 @@ function GridFloorPlanEditor({
                       />
                       <Text
                         align="center"
-                        fill="#4b5563"
-                        fontFamily="Inter, Roboto, sans-serif"
+                        fill={roomVisual.dimensionColor}
+                        fontFamily={isPresentationMode ? "Manrope, sans-serif" : "Manrope, sans-serif"}
                         fontSize={dimensionFontSize}
                         height={dimensionTextHeight}
                         listening={false}
