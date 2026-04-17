@@ -18,6 +18,8 @@ function normalizeInput(raw) {
   if (!raw || typeof raw !== "object" || Array.isArray(raw))
     throw createError("Layout input must be a JSON object.");
 
+  const rawWidthProvided = Object.prototype.hasOwnProperty.call(raw, "plotWidth");
+  const rawHeightProvided = Object.prototype.hasOwnProperty.call(raw, "plotHeight");
   const sw = Number(raw.plotWidth), sh = Number(raw.plotHeight);
   const derivedGaj = Number.isFinite(sw) && Number.isFinite(sh) ? (sw * sh) / 9 : NaN;
   const plotGaj = Number(raw.plotGaj ?? derivedGaj);
@@ -27,6 +29,8 @@ function normalizeInput(raw) {
   return {
     plotGaj, plotShape,
     rawW: sw, rawH: sh,
+    rawWidthProvided,
+    rawHeightProvided,
     dwellingType: raw.dwellingType ?? "house",
     bedrooms: clamp(Number(raw.bedrooms ?? 3), 1, 6),
     bathrooms: clamp(Number(raw.bathrooms ?? 2), 1, 4),
@@ -43,6 +47,14 @@ function deriveShape(r) {
 }
 
 function validateInput(inp) {
+  if (inp.rawWidthProvided || inp.rawHeightProvided) {
+    if (!inp.rawWidthProvided || !inp.rawHeightProvided) {
+      throw createError("plotWidth and plotHeight must both be provided together.");
+    }
+    if (!Number.isFinite(inp.rawW) || !Number.isFinite(inp.rawH) || inp.rawW <= 0 || inp.rawH <= 0) {
+      throw createError("plotWidth and plotHeight must be positive numbers.");
+    }
+  }
   if (!Number.isFinite(inp.plotGaj) || inp.plotGaj < MIN_GAJ || inp.plotGaj > MAX_GAJ)
     throw createError(`plotGaj must be between ${MIN_GAJ} and ${MAX_GAJ}.`);
   if (!["square", "rectangle", "deep-rectangle"].includes(inp.plotShape))
@@ -64,7 +76,7 @@ function derivePlotDimensions(gaj, shape, rawW, rawH, frontDirection) {
   const dir = String(frontDirection ?? "south").toLowerCase();
   const shouldSwap = dir === "east" || dir === "west";
 
-  if (rawW && rawH) {
+  if (Number.isFinite(rawW) && Number.isFinite(rawH) && rawW > 0 && rawH > 0) {
     const width = shouldSwap ? rawH : rawW;
     const height = shouldSwap ? rawW : rawH;
     return { width, height, areaSqFt: rawW * rawH };
@@ -353,8 +365,15 @@ function buildLayout(plot, input, tier, features) {
       rooms
         .filter(r => round(r.y) === round(backBandY))
         .forEach(r => { r.x = round(r.x - shift); });
-      // Expand the leftmost room to absorb the gap
-      firstBandRoom.width = round(firstBandRoom.width + shift);
+      // Keep rooms contiguous by absorbing the reclaimed left gap at the right edge.
+      const rightmostBandRoom = rooms
+        .filter(r => round(r.y) === round(backBandY))
+        .reduce((acc, room) => (
+          !acc || (room.x + room.width) > (acc.x + acc.width) ? room : acc
+        ), null);
+      if (rightmostBandRoom) {
+        rightmostBandRoom.width = round(rightmostBandRoom.width + shift);
+      }
     }
   }
 
@@ -398,11 +417,17 @@ function buildLayout(plot, input, tier, features) {
     const sideOnLeft = serviceOnRight; // side column goes opposite service
     sideColW = clamp(W * 0.25, 10, 14);
     const sideX = sideOnLeft ? 0 : W - sideColW;
+    if (midH / bedsInSide < 10) {
+      throw createError("Not enough vertical space to place side bedrooms at minimum dimensions.");
+    }
     const perBedH = round(midH / bedsInSide);
 
     for (let i = 0; i < bedsInSide; i++) {
       const idx = bedsInBand + i;
       const bedH = (i === bedsInSide - 1) ? midH - i * perBedH : perBedH; // last fills remainder
+      if (bedH < 10) {
+        throw createError("Not enough vertical space to place side bedrooms at minimum dimensions.");
+      }
       rooms.push(makeRoom(`bed_${idx + 1}`, `Bedroom ${idx + 1}`, "Private",
         sideX, midY + i * perBedH, sideColW, bedH));
     }
@@ -428,7 +453,6 @@ function buildLayout(plot, input, tier, features) {
       const masterArea = master ? master.width * master.height : Infinity;
       const sideBeds = rooms.filter(r => r.type.includes("Bedroom") && round(r.y) >= round(midY));
       for (const sb of sideBeds) {
-        const oldW = sb.width;
         const newW = sb.width + excessW;
         const maxW = masterArea / sb.height - 0.5; // keep area under master
         sb.width = round(Math.min(newW, Math.max(sb.width, maxW)));
@@ -440,17 +464,21 @@ function buildLayout(plot, input, tier, features) {
       }
       sideColW = sideBeds.length > 0 ? sideBeds[0].width : sideColW + excessW;
     } else {
-      // Create a bedroom extension from the back band into mid area
-      sideColW = excessW;
+      // Create a bedroom extension only if it can satisfy hard bedroom minimums.
       const extSide = serviceOnRight ? "left" : "right";
       const backBandBeds = rooms.filter(r => round(r.y) === round(backBandY) && r.type.includes("Bed"));
       const extendBed = extSide === "left" ? backBandBeds[0] : backBandBeds[backBandBeds.length - 1];
-      if (extendBed && excessW > 2) {
+      const canCreateExt = extendBed && excessW >= 10 && midH >= 10;
+      if (canCreateExt) {
+        sideColW = excessW;
         rooms.push(makeRoom(
           extendBed.id + "_ext", extendBed.type + " Extension", "Private",
           extSide === "left" ? 0 : W - excessW,
           midY, excessW, midH
         ));
+      } else {
+        // If we cannot form a minimum-size bedroom extension, keep the larger hall.
+        sideColW = 0;
       }
     }
 
@@ -493,6 +521,20 @@ function validateRooms(rooms, pw, ph) {
   return true;
 }
 
+function validateHardMinimums(rooms) {
+  for (const r of rooms) {
+    const isBedroom = r.type.includes("Bedroom") || r.type === "Master Bedroom";
+    const isBath = r.type.includes("Bath") || r.type.includes("Bathroom");
+    if (isBedroom && (r.width < 10 || r.height < 10)) {
+      return false;
+    }
+    if (isBath && (r.width < 4 || r.height < 4)) {
+      return false;
+    }
+  }
+  return true;
+}
+
 /* ── Ratio / size sanity check (post-placement) ── */
 
 function applyCorrections(rooms, W) {
@@ -506,7 +548,8 @@ function applyCorrections(rooms, W) {
       if (bed.width * bed.height > masterArea) {
         // Shrink this bed slightly (reduce width by small amount)
         const excess = (bed.width * bed.height - masterArea) / bed.height;
-        bed.width = round(bed.width - Math.min(excess, bed.width * 0.1));
+        const reducedWidth = bed.width - Math.min(excess, bed.width * 0.1);
+        bed.width = round(Math.max(10, reducedWidth));
         // Re-anchor right-side beds after shrinking
         if (bed.x + bed.width < W - 1 && bed.x > W / 2) {
           bed.x = round(W - bed.width);
@@ -534,7 +577,7 @@ export function generateLayout(rawInput) {
   let rooms = buildLayout(plot, input, tier, features);
   rooms = applyCorrections(rooms, plot.width);
 
-  if (!validateRooms(rooms, plot.width, plot.height)) {
+  if (!validateRooms(rooms, plot.width, plot.height) || !validateHardMinimums(rooms)) {
     throw createError("Unable to generate a valid layout for the selected plot.");
   }
 

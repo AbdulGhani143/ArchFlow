@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { generateSmartLayout } from "./smartZoningV3Engine.js";
+import { generateSmartLayout } from "./zoningLayoutEngine.js";
 
 /* ── Helper Assertions ── */
 

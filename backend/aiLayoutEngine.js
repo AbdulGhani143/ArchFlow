@@ -323,20 +323,54 @@ function safeParseGeminiJson(rawText) {
   }
 }
 
-function validateGeminiLayoutShape(layout) {
+function boxesOverlap(a, b) {
+  const ax2 = a.xPercentage + a.widthPercentage;
+  const ay2 = a.yPercentage + a.heightPercentage;
+  const bx2 = b.xPercentage + b.widthPercentage;
+  const by2 = b.yPercentage + b.heightPercentage;
+  const ox = Math.min(ax2, bx2) - Math.max(a.xPercentage, b.xPercentage);
+  const oy = Math.min(ay2, by2) - Math.max(a.yPercentage, b.yPercentage);
+  return ox > 0 && oy > 0;
+}
+
+function validateGeminiLayoutShape(layout, inputs) {
   if (!layout || typeof layout !== "object" || Array.isArray(layout)) {
     throw createServiceError("Gemini returned a non-object layout payload.");
+  }
+
+  if (!layout.plot || typeof layout.plot !== "object" || Array.isArray(layout.plot)) {
+    throw createServiceError("Gemini returned layout without a valid plot object.", layout);
+  }
+
+  if (!Number.isFinite(layout.plot.width) || layout.plot.width <= 0
+      || !Number.isFinite(layout.plot.height) || layout.plot.height <= 0
+      || typeof layout.plot.unit !== "string") {
+    throw createServiceError("Gemini returned plot with invalid dimensions.", layout.plot);
+  }
+
+  if (!layout.strategy || typeof layout.strategy !== "object" || Array.isArray(layout.strategy)) {
+    throw createServiceError("Gemini returned layout without a valid strategy object.", layout);
+  }
+
+  if (typeof layout.strategy.zoning !== "string" || !Array.isArray(layout.strategy.vastuNotes)) {
+    throw createServiceError("Gemini returned strategy with invalid fields.", layout.strategy);
   }
 
   if (!Array.isArray(layout.rooms) || layout.rooms.length === 0) {
     throw createServiceError("Gemini returned JSON without a valid rooms array.", layout);
   }
 
+  const seenIds = new Set();
+
   for (const room of layout.rooms) {
     if (
       typeof room.id !== "string"
       || typeof room.type !== "string"
       || typeof room.zone !== "string"
+      || !Array.isArray(room.adjacentTo)
+      || !Array.isArray(room.openTo)
+      || typeof room.open !== "boolean"
+      || typeof room.notes !== "string"
       || !Number.isFinite(room.xPercentage)
       || !Number.isFinite(room.yPercentage)
       || !Number.isFinite(room.widthPercentage)
@@ -344,6 +378,76 @@ function validateGeminiLayoutShape(layout) {
     ) {
       throw createServiceError("Gemini returned a room with missing required fields.", room);
     }
+
+    if (seenIds.has(room.id)) {
+      throw createServiceError("Gemini returned duplicate room ids.", room);
+    }
+    seenIds.add(room.id);
+
+    if (room.adjacentTo.some((id) => typeof id !== "string")
+        || room.openTo.some((id) => typeof id !== "string")) {
+      throw createServiceError("Gemini returned room adjacency/open links with invalid ids.", room);
+    }
+
+    if (room.xPercentage < 0 || room.yPercentage < 0
+        || room.widthPercentage <= 0 || room.heightPercentage <= 0
+        || room.xPercentage > 100 || room.yPercentage > 100
+        || room.widthPercentage > 100 || room.heightPercentage > 100) {
+      throw createServiceError("Gemini returned room percentages outside valid range.", room);
+    }
+
+    if (room.xPercentage + room.widthPercentage > 100
+        || room.yPercentage + room.heightPercentage > 100) {
+      throw createServiceError("Gemini returned room extending outside plot bounds.", room);
+    }
+  }
+
+  for (let i = 0; i < layout.rooms.length; i++) {
+    for (let j = i + 1; j < layout.rooms.length; j++) {
+      if (boxesOverlap(layout.rooms[i], layout.rooms[j])) {
+        throw createServiceError("Gemini returned overlapping rooms.", {
+          roomA: layout.rooms[i].id,
+          roomB: layout.rooms[j].id,
+        });
+      }
+    }
+  }
+
+  const totalRequestedBedrooms = inputs.bedrooms + inputs.guestRooms;
+  const bedroomCount = layout.rooms.filter((room) => room.type.toLowerCase().includes("bedroom")).length;
+  const bathroomCount = layout.rooms.filter((room) => {
+    const t = room.type.toLowerCase();
+    return t.includes("bath") || t.includes("toilet");
+  }).length;
+  const kitchenCount = layout.rooms.filter((room) => room.type.toLowerCase().includes("kitchen")).length;
+  const hallCount = layout.rooms.filter((room) => {
+    const t = room.type.toLowerCase();
+    return t.includes("hall") || t.includes("living");
+  }).length;
+
+  if (bedroomCount < totalRequestedBedrooms) {
+    throw createServiceError("Gemini returned fewer bedrooms than requested.", {
+      requested: totalRequestedBedrooms,
+      actual: bedroomCount,
+    });
+  }
+  if (bathroomCount < inputs.bathrooms) {
+    throw createServiceError("Gemini returned fewer bathrooms than requested.", {
+      requested: inputs.bathrooms,
+      actual: bathroomCount,
+    });
+  }
+  if (kitchenCount < inputs.kitchens) {
+    throw createServiceError("Gemini returned fewer kitchens than requested.", {
+      requested: inputs.kitchens,
+      actual: kitchenCount,
+    });
+  }
+  if (hallCount < inputs.halls) {
+    throw createServiceError("Gemini returned fewer halls/living spaces than requested.", {
+      requested: inputs.halls,
+      actual: hallCount,
+    });
   }
 
   return layout;
@@ -435,7 +539,7 @@ export async function generateAiLayout(rawInputs) {
     });
   }
 
-  return validateGeminiLayoutShape(parsedLayout);
+  return validateGeminiLayoutShape(parsedLayout, inputs);
 }
 
 export default {

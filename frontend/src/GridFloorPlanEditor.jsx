@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Circle, Group, Layer, Line, Rect, Shape, Stage, Text, Transformer } from "react-konva";
 
 const BASE_GRID_CELLS = 256;
@@ -1207,6 +1207,7 @@ function GridFloorPlanEditor({
   dwellingType = "house",
   boundaries = { north: "covered", south: "front", east: "open", west: "covered" },
   themeMode = "light",
+  onRoomsChange,
 }) {
   const isDarkTheme = themeMode === "dark";
   const [rooms, setRooms] = useState(() => normalizeIncomingRooms(initialRooms));
@@ -1219,6 +1220,7 @@ function GridFloorPlanEditor({
   const [copyFeedback, setCopyFeedback] = useState(null);
   const [editorToast, setEditorToast] = useState("");
   const wrapperRef = useRef(null);
+  const editorShellRef = useRef(null);
   const transformerRef = useRef(null);
   const groupRefs = useRef(new Map());
   const shapeRefs = useRef(new Map());
@@ -1420,6 +1422,10 @@ function GridFloorPlanEditor({
     }
 
     const handleOutsideStagePointerDown = (event) => {
+      if (editorShellRef.current && editorShellRef.current.contains(event.target)) {
+        return;
+      }
+
       const stageContainer = wrapperRef.current?.querySelector(".konvajs-content");
       if (!stageContainer) return;
       if (stageContainer.contains(event.target)) return;
@@ -1507,33 +1513,10 @@ function GridFloorPlanEditor({
   }, [initialRooms]);
 
   useEffect(() => {
-    // ── Z-ORDER EFFECT ──
-    const hallNode = groupRefs.current.get("hall");
-    if (hallNode) hallNode.moveToBottom();
-
-    if (selectedId && selectedId !== "hall") {
-      const topNode = groupRefs.current.get(selectedId);
-      if (topNode) topNode.moveToTop();
+    if (typeof onRoomsChange === "function") {
+      onRoomsChange(rooms);
     }
-  }, [selectedId, rooms]);
-
-  useLayoutEffect(() => {
-    const hallNode = groupRefs.current.get("hall");
-    const selectedNode = selectedId ? groupRefs.current.get(selectedId) : null;
-    const layer = selectedNode?.getLayer() ?? hallNode?.getLayer();
-
-    if (!layer) {
-      return;
-    }
-
-    hallNode?.moveToBottom();
-
-    if (selectedNode && selectedId !== "hall") {
-      selectedNode.moveToTop();
-    }
-
-    layer.batchDraw();
-  }, [selectedId, rooms]);
+  }, [onRoomsChange, rooms]);
 
   useEffect(() => {
     const transformer = transformerRef.current;
@@ -1596,6 +1579,15 @@ function GridFloorPlanEditor({
     setSelectedId(roomId);
   };
 
+  const handleRoomPointerDown = (roomId, event) => {
+    if (isPresentationMode) return;
+    // Pointer-down selection is more reliable than click across zoom/DPI/browser differences.
+    activateRoom(roomId);
+    if (event?.cancelBubble !== undefined) {
+      event.cancelBubble = false;
+    }
+  };
+
   const bindGroupRef = (roomId, node) => {
     if (!node) groupRefs.current.delete(roomId);
     else groupRefs.current.set(roomId, node);
@@ -1604,6 +1596,30 @@ function GridFloorPlanEditor({
   const bindShapeRef = (roomId, node) => {
     if (!node) shapeRefs.current.delete(roomId);
     else shapeRefs.current.set(roomId, node);
+  };
+
+  const findRoomAtStagePoint = (stagePoint) => {
+    if (!stagePoint) return null;
+
+    // Search from top-most drawn room to bottom-most.
+    for (let index = rooms.length - 1; index >= 0; index -= 1) {
+      const room = rooms[index];
+      const roomX = (room.x / plotWidth) * stageWidth;
+      const roomY = (room.y / plotHeight) * stageHeight;
+      const roomW = (room.width / plotWidth) * stageWidth;
+      const roomH = (room.height / plotHeight) * stageHeight;
+
+      if (
+        stagePoint.x >= roomX &&
+        stagePoint.x <= roomX + roomW &&
+        stagePoint.y >= roomY &&
+        stagePoint.y <= roomY + roomH
+      ) {
+        return room.id;
+      }
+    }
+
+    return null;
   };
 
   const showEditorToast = (message) => {
@@ -1721,8 +1737,8 @@ function GridFloorPlanEditor({
   /* ── Delete selected room ── */
   const deleteSelectedRoom = () => {
     if (!selectedId) return;
-    // Don't allow deleting the hall
-    if (selectedId === "hall") return;
+    const selectedRoom = rooms.find((room) => room.id === selectedId);
+    if (selectedRoom && isHall(selectedRoom)) return;
     setRooms((currentRooms) => currentRooms.filter((room) => room.id !== selectedId));
     setSelectedId(null);
   };
@@ -2000,7 +2016,7 @@ function GridFloorPlanEditor({
   })).filter((cat) => cat.rooms.length > 0);
 
   return (
-    <div className={`editor-shell ${isPresentationMode ? "presentation-sheet" : ""}`}>
+    <div ref={editorShellRef} className={`editor-shell ${isPresentationMode ? "presentation-sheet" : ""}`}>
       <div className="furniture-toggle-container">
         <button 
           className={`furniture-toggle-btn mode-toggle-btn mode-left-btn ${!isPresentationMode ? 'active' : ''}`}
@@ -2039,7 +2055,7 @@ function GridFloorPlanEditor({
       )}
       <div
         className={`editor-canvas ${isPresentationMode ? "presentation-canvas" : ""}`}
-        onMouseDown={(event) => {
+        onPointerDown={(event) => {
           if (event.target === event.currentTarget) {
             setSelectedId(null);
           }
@@ -2054,8 +2070,19 @@ function GridFloorPlanEditor({
         ) : null}
         <Stage
           height={stageHeight}
-          onMouseDown={(event) => {
-            if (event.target === event.target.getStage()) {
+          onPointerDown={(event) => {
+            if (isPresentationMode) return;
+
+            const stage = event.target?.getStage?.();
+            const pointer = stage?.getPointerPosition?.();
+            const roomId = findRoomAtStagePoint(pointer);
+
+            if (roomId) {
+              setSelectedId(roomId);
+              return;
+            }
+
+            if (event.target === stage) {
               setSelectedId(null);
             }
           }}
@@ -2199,6 +2226,8 @@ function GridFloorPlanEditor({
                   }}
                   draggable={!isPresentationMode}
                   key={room.id}
+                  onPointerDown={isPresentationMode ? undefined : (event) => handleRoomPointerDown(room.id, event)}
+                  onMouseDown={isPresentationMode ? undefined : (event) => handleRoomPointerDown(room.id, event)}
                   onClick={isPresentationMode ? undefined : () => activateRoom(room.id)}
                   onDragStart={isPresentationMode ? undefined : () => {
                     activateRoom(room.id);
@@ -2229,7 +2258,6 @@ function GridFloorPlanEditor({
                       ));
                     });
                   }}
-                  onMouseDown={isPresentationMode ? undefined : () => activateRoom(room.id)}
                   onTap={isPresentationMode ? undefined : () => activateRoom(room.id)}
                   ref={(node) => bindGroupRef(room.id, node)}
                   x={roomX}
@@ -2722,7 +2750,7 @@ function GridFloorPlanEditor({
             >
               🪟 Add Window
             </button>
-            {selectedId !== "hall" && (
+            {!(selectedRoom && isHall(selectedRoom)) && (
               <button
                 className="room-action-btn delete-btn"
                 onClick={deleteSelectedRoom}

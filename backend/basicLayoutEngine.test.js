@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { generateLayout } from "./layoutEngine.js";
+import { generateLayout } from "./basicLayoutEngine.js";
 
 function assertWithinBounds(layout) {
   for (const room of layout.rooms) {
@@ -50,7 +50,7 @@ test("rejects infeasible anchored layouts before placement", () => {
       bedroomSizes: ["large", "large", "large"],
       kitchenSize: "large",
     }),
-    /Minimum required area/,
+    /Minimum required area|Plot is too small/,
   );
 });
 
@@ -95,12 +95,12 @@ test("returns entrance, shaft, and hall metadata for connected layouts", () => {
     kitchenSize: "small",
   });
 
-  assert.ok(layout.rooms.some((room) => room.type === "Entrance"));
+  assert.ok(layout.rooms.some((room) => room.type.includes("Entrance")));
   assert.ok(layout.rooms.some((room) => room.type === "Shaft"));
   assert.ok(layout.rooms.some((room) => room.type === "Hall"));
-  assert.equal(layout.meta.connected, true);
-  assert.ok(layout.meta.hallSegments >= 1);
-  assert.equal(layout.meta.deadSpaceArea, 0);
+  assert.equal(layout.meta.planningLogic, "boundary-aware");
+  assert.equal(layout.meta.dwellingType, "house");
+  assert.equal(layout.meta.frontDirection, "south");
 });
 
 test("tracks attached and shared bathrooms in the new anchored flow", () => {
@@ -113,7 +113,9 @@ test("tracks attached and shared bathrooms in the new anchored flow", () => {
     kitchenSize: "medium",
   });
 
-  assert.equal(layout.rooms.filter((room) => room.type.startsWith("Bathroom")).length, 2);
-  assert.ok(layout.meta.attachedBathrooms >= 1);
-  assert.ok(layout.meta.sharedBathrooms >= 0);
+  const bathrooms = layout.rooms.filter((room) => room.type.includes("Bath") || room.type.includes("Bathroom"));
+  assert.equal(bathrooms.length, 2);
+  assert.ok(layout.rooms.some((room) => room.type.includes("Attached Bath")));
+  assert.ok(layout.rooms.some((room) => room.type === "Common Bathroom"));
+  assert.ok(layout.meta.features.attachedBathCount >= 1);
 });

@@ -51,8 +51,8 @@ const CORRIDOR_MIN_WIDTH = 3; // feet
 // Setback definitions (meters → feet)
 const SETBACKS = {
   small:   { front: 1.5 * 3.281, sides: 0.9 * 3.281, rear: 1.2 * 3.281 },
-  medium:  { front: 2.0 * 3.281, sides: 1.0 * 3.281, rear: 1.5 * 3.281 },
-  large:   { front: 3.0 * 3.281, sides: 1.5 * 3.281, rear: 2.0 * 3.281 },
+  medium:  { front: 1.5 * 3.281, sides: 0.6 * 3.281, rear: 1.0 * 3.281 },
+  large:   { front: 2.0 * 3.281, sides: 1.0 * 3.281, rear: 1.5 * 3.281 },
 };
 
 // Zone default percentages
@@ -74,6 +74,7 @@ const SCORE_WEIGHTS = {
 
 function round(v) { return Math.round(v * 10 ** R) / 10 ** R; }
 function clamp(v, lo, hi) { return Math.min(Math.max(v, lo), hi); }
+function snapToGrid(v, grid = 0.5) { return Math.round(v / grid) * grid; }
 
 function createError(msg) {
   const e = new Error(msg);
@@ -84,8 +85,8 @@ function createError(msg) {
 function makeRoom(id, type, zone, x, y, w, h, extra = {}) {
   return {
     id, type, zone,
-    x: round(x), y: round(y),
-    width: round(w), height: round(h),
+    x: snapToGrid(x), y: snapToGrid(y),
+    width: snapToGrid(w), height: snapToGrid(h),
     ventilation: "none",
     openToHall: false,
     ...extra,
@@ -217,19 +218,39 @@ function mapEdges(boundaries, frontDir) {
    STEP 1 — ZONING (Fixed-Band)
    ═══════════════════════════════════════════════════════════ */
 
-function createZones(ba, serviceSide, ratios) {
+function createZones(ba, serviceSide, ratios, input = null) {
+  if (input && input.plotGaj < 300 && !ba.isExpanded) {
+      ba.x = snapToGrid(Math.max(0, ba.x - 1.5));
+      ba.y = snapToGrid(Math.max(0, ba.y - 1.5));
+      ba.width = snapToGrid(ba.width + 3);
+      ba.height = snapToGrid(ba.height + 3);
+      ba.isExpanded = true;
+  }
   const pct = { ...ZONE_DEFAULTS, ...ratios };
 
   const depthSum = pct.private + pct.semiPrivate + pct.public;
   const normP = pct.private / depthSum;
   const normSP = pct.semiPrivate / depthSum;
 
-  const privateH = round(ba.height * normP);
-  const semiPrivateH = round(ba.height * normSP);
+  const rawPrivateH = ba.height * normP;
+  // Cap the private zone height to a maximum of 18ft to prevent tube bedrooms
+  const privateH = snapToGrid(Math.min(rawPrivateH, 18));
+  
+  // Transfer any unused height from the private zone into the semi-private zone
+  const semiPrivateH = snapToGrid((ba.height * normSP) + (rawPrivateH - privateH));
   const publicH = round(ba.height - privateH - semiPrivateH);
 
-  const serviceW = round(ba.width * clamp(pct.serviceWidth, 0.12, 0.30));
-  const serviceX = serviceSide === "right" ? round(ba.x + ba.width - serviceW) : ba.x;
+  const rawServiceW = ba.width * clamp(pct.serviceWidth, 0.12, 0.30);
+  let serviceW = snapToGrid(Math.max(8, rawServiceW));
+  // serviceX must be grid-aligned (makeRoom uses snapToGrid on x)
+  // For right-side: snap serviceX DOWN to grid so the zone doesn't shrink below 8ft
+  let serviceX;
+  if (serviceSide === "right") {
+    serviceX = Math.floor((ba.x + ba.width - serviceW) / 0.5) * 0.5;
+    serviceW = round(ba.x + ba.width - serviceX);
+  } else {
+    serviceX = ba.x;
+  }
 
   const privateY = ba.y;
   const semiPrivateY = round(ba.y + privateH);
@@ -252,7 +273,7 @@ function placeServiceCore(zones, numBaths, attachedBathCount) {
   const rooms = [];
 
   const shaftW = 3, shaftH = 4;
-  const kitchenW = Math.min(round(sz.w), 10);
+  const kitchenW = snapToGrid(clamp(sz.w, 8, 10));
   const kitchenH = clamp(round(sz.h * 0.50), 8, 12);
   const commonBathH = clamp(round(sz.h * 0.30), 5, 8);
   const sharedBaths = Math.max(0, numBaths - attachedBathCount);
@@ -273,57 +294,235 @@ function placeServiceCore(zones, numBaths, attachedBathCount) {
   return rooms;
 }
 
+function buildMandatoryLivingFurnitureSet(livingRoom) {
+  if (!livingRoom) return null;
+
+  const roomW = snapToGrid(livingRoom.width);
+  const roomH = snapToGrid(livingRoom.height);
+  if (roomW <= 0 || roomH <= 0) return null;
+
+  const baseFootprintW = snapToGrid(16);
+  const baseFootprintH = snapToGrid(11);
+
+  const baseItems = [
+    { type: "three-seater-sofa", w: snapToGrid(7), h: snapToGrid(3), x: snapToGrid(4.5), y: snapToGrid(0) },
+    { type: "armchair",          w: snapToGrid(3), h: snapToGrid(3), x: snapToGrid(2.5), y: snapToGrid(5.5) },
+    { type: "coffee-table",      w: snapToGrid(4), h: snapToGrid(2), x: snapToGrid(6),   y: snapToGrid(6) },
+    { type: "armchair",          w: snapToGrid(3), h: snapToGrid(3), x: snapToGrid(10.5), y: snapToGrid(5.5) },
+  ];
+
+  const rotateClockwise = (items, width) => items.map((it) => {
+    const nx = snapToGrid(it.y);
+    const ny = snapToGrid(width - (it.x + it.w));
+    return {
+      type: it.type,
+      w: snapToGrid(it.h),
+      h: snapToGrid(it.w),
+      x: nx,
+      y: ny,
+    };
+  });
+
+  const scaleItems = (items, scale) => items.map((it) => ({
+    type: it.type,
+    w: snapToGrid(it.w * scale),
+    h: snapToGrid(it.h * scale),
+    x: snapToGrid(it.x * scale),
+    y: snapToGrid(it.y * scale),
+  }));
+
+  const tryFit = (items, baseW, baseH) => {
+    const maxScaleByRoom = snapToGrid(Math.min(roomW / baseW, roomH / baseH), 0.01);
+    if (maxScaleByRoom <= 0) return null;
+
+    // Allow compact-housing downscale while preserving furniture ratios.
+    const isCompact = (roomW * roomH) < 160;
+    const minScale = snapToGrid(isCompact ? 0.60 : 0.75, 0.01);
+    const fitScale = maxScaleByRoom >= 1
+      ? snapToGrid(1, 0.01)
+      : snapToGrid(maxScaleByRoom, 0.01);
+
+    if (fitScale < minScale) return null;
+
+    const scaledW = snapToGrid(baseW * fitScale);
+    const scaledH = snapToGrid(baseH * fitScale);
+    const offX = snapToGrid((roomW - scaledW) / 2);
+    const offY = snapToGrid((roomH - scaledH) / 2);
+    const scaledItems = scaleItems(items, fitScale);
+
+    return scaledItems.map((it) => ({
+      type: it.type,
+      x: snapToGrid(livingRoom.x + offX + it.x),
+      y: snapToGrid(livingRoom.y + offY + it.y),
+      width: snapToGrid(it.w),
+      height: snapToGrid(it.h),
+    }));
+  };
+
+  const upright = tryFit(baseItems, baseFootprintW, baseFootprintH);
+  if (upright) return upright;
+
+  const rotatedBase = rotateClockwise(baseItems, baseFootprintW);
+  return tryFit(rotatedBase, baseFootprintH, baseFootprintW);
+}
+
+function buildMandatoryMasterBedFurnitureSet(masterBed) {
+  if (!masterBed) return null;
+  const W = snapToGrid(masterBed.width);
+  const H = snapToGrid(masterBed.height);
+  
+  const bedTotalW = 9;
+  const bedH = 6.5;
+  const wardDepth = 2;
+  const wardLen = 6;
+  const clearance = snapToGrid(2.5);
+
+  if (H >= snapToGrid(bedH + clearance + wardDepth) && W >= bedTotalW) {
+    const bX = snapToGrid((W - 6) / 2);
+    return [
+      { type: "double-bed", w: 6, h: bedH, x: snapToGrid(masterBed.x + bX), y: snapToGrid(masterBed.y) },
+      { type: "nightstand", w: 1.5, h: 1.5, x: snapToGrid(masterBed.x + bX - 1.5), y: snapToGrid(masterBed.y) },
+      { type: "nightstand", w: 1.5, h: 1.5, x: snapToGrid(masterBed.x + bX + 6), y: snapToGrid(masterBed.y) },
+      { type: "wardrobe", w: wardLen, h: wardDepth, x: snapToGrid(masterBed.x + (W - wardLen)/2), y: snapToGrid(masterBed.y + H - wardDepth) }
+    ];
+  }
+
+  if (W >= snapToGrid(bedH + clearance + wardDepth) && H >= bedTotalW) {
+    const bY = snapToGrid((H - 6) / 2);
+    return [
+      { type: "double-bed", w: bedH, h: 6, x: snapToGrid(masterBed.x), y: snapToGrid(masterBed.y + bY) },
+      { type: "nightstand", w: 1.5, h: 1.5, x: snapToGrid(masterBed.x), y: snapToGrid(masterBed.y + bY - 1.5) },
+      { type: "nightstand", w: 1.5, h: 1.5, x: snapToGrid(masterBed.x), y: snapToGrid(masterBed.y + bY + 6) },
+      { type: "wardrobe", w: wardDepth, h: wardLen, x: snapToGrid(masterBed.x + W - wardDepth), y: snapToGrid(masterBed.y + (H - wardLen)/2) }
+    ];
+  }
+  
+  return null;
+}
+
 /* ═══════════════════════════════════════════════════════════
    STEP 2a — HOUSE LAYOUT
    ═══════════════════════════════════════════════════════════ */
 
 function buildHouseLayout(ba, zones, input, tier, edges, serviceSide, entranceAlign) {
+  const dwellingType = input?.dwellingType || "house";
+  if (dwellingType !== "house") {
+      throw createError("buildHouseLayout is strictly for house layouts.");
+  }
+
   const rooms = [];
   const W = ba.width;
+  const plotAspect = snapToGrid(ba.width / ba.height, 0.01);
+  const isSquare = plotAspect >= 0.85 && plotAspect <= 1.15;
   const isLarge = tier === "large";
   const numBeds = input.bedrooms;
   const numBaths = input.bathrooms;
   const attachedBathCount = Math.max(0, Math.min(numBeds, numBaths - 1));
+  let squareLivingFrame = null;
+  let squareHasPublicHall = false;
 
   /* ─── PUBLIC ZONE: entrance + living as full-height block ─── */
   const pubZ = zones.public;
-  const nonServiceW = round(W - zones.service.w);
-  const livingX = serviceSide === "right" ? pubZ.x : round(pubZ.x + zones.service.w);
+  const nonServiceW = snapToGrid(W - zones.service.w);
+  const nonServiceX = serviceSide === "right" ? pubZ.x : snapToGrid(pubZ.x + zones.service.w);
+  const livingX = nonServiceX;
 
-  // Entrance (porch) as a strip at the very bottom of public zone
+  // Compute living/entrance depths so they always fit inside the public band.
+  const rawLivingH = snapToGrid(pubZ.h * 0.70);
+  const minPorchH = snapToGrid(pubZ.h >= 14 ? 4 : 3);
+  const maxLivingH = snapToGrid(Math.max(8, pubZ.h - minPorchH));
+  const minLivingH = snapToGrid(Math.min(12, Math.max(9, maxLivingH)));
+  let livingH = snapToGrid(clamp(rawLivingH, minLivingH, maxLivingH));
+  let porchH = snapToGrid(Math.max(minPorchH, snapToGrid(pubZ.h - livingH)));
+
+  const publicOverflow = snapToGrid(snapToGrid(livingH + porchH) - pubZ.h);
+  if (publicOverflow > 0) {
+    const reducibleLiving = snapToGrid(Math.max(0, livingH - 9));
+    const reduceBy = snapToGrid(Math.min(publicOverflow, reducibleLiving));
+    livingH = snapToGrid(livingH - reduceBy);
+    porchH = snapToGrid(Math.max(3, snapToGrid(pubZ.h - livingH)));
+  }
   const porchW = clamp(W * 0.30, 6, 14);
-  const porchH = clamp(pubZ.h * 0.30, 4, 6);
   const porchX = entranceAlign === "centered"
-    ? round(pubZ.x + (W - porchW) / 2)
-    : round(pubZ.x + W * 0.05);
-  const porchY = round(pubZ.y + pubZ.h - porchH);
+    ? snapToGrid(nonServiceX + (nonServiceW - porchW) / 2)
+    : snapToGrid(nonServiceX + nonServiceW * 0.05);
+  const porchY = snapToGrid(pubZ.y + livingH);
 
   rooms.push(makeRoom("entrance", "Entrance", "Public", porchX, porchY, porchW, porchH));
 
-  // Living room fills the rest of the public zone (non-service side)
-  // It spans from pubZ.y to the top of porch, ensuring adjacency
-  const livingH = round(porchY - pubZ.y);
-  if (livingH >= 6 && nonServiceW >= 10) {
+  // Calculate maximum allowed width based on a 1:1.8 ratio
+  const finalLivingH = snapToGrid(livingH);
+  const maxLivingW = snapToGrid(finalLivingH * 1.8);
+
+  if (isSquare) {
+    const minSquareLivingW = snapToGrid(Math.max(12, snapToGrid(nonServiceW * 0.5)));
+    const maxSquareLivingW = snapToGrid(Math.max(minSquareLivingW, snapToGrid(nonServiceW * 0.6)));
+    const targetSquareLivingW = snapToGrid(nonServiceW * 0.55);
+    const livingW = snapToGrid(clamp(targetSquareLivingW, minSquareLivingW, maxSquareLivingW));
+    const livingSquareX = serviceSide === "right"
+      ? snapToGrid(nonServiceX + (nonServiceW - livingW))
+      : nonServiceX;
+
     rooms.push(makeRoom("living", "Living Room", "Public",
-      livingX, pubZ.y, nonServiceW, livingH, { openToHall: true }));
-  } else {
-    // Fallback: living fills entire public zone height on non-service side
-    rooms.push(makeRoom("living", "Living Room", "Public",
-      livingX, pubZ.y, nonServiceW, pubZ.h, { openToHall: true }));
+      livingSquareX, pubZ.y, livingW, finalLivingH, { openToHall: true }));
+
+    const hallStripW = snapToGrid(nonServiceW - livingW);
+    if (hallStripW >= 6) {
+      const hallX = serviceSide === "right"
+        ? nonServiceX
+        : snapToGrid(livingSquareX + livingW);
+      rooms.push(makeRoom("hall", "Hall", "Semi-private",
+        hallX, pubZ.y, hallStripW, finalLivingH,
+        { openToHall: true, circulationWidth: snapToGrid(hallStripW) }));
+      squareHasPublicHall = true;
+    }
+
+    squareLivingFrame = {
+      x: snapToGrid(livingSquareX),
+      width: snapToGrid(livingW),
+    };
   }
 
-  // Parking / front yard — placed alongside entrance (same Y band)
+  // If the available nonServiceW is larger than our max allowed width, we split it.
+  if (!isSquare && nonServiceW > maxLivingW) {
+      // Place Living Room capped at max width
+      rooms.push(makeRoom("living", "Living Room", "Public",
+        nonServiceX, pubZ.y, maxLivingW, finalLivingH, { openToHall: true }));
+
+      // Use the remaining width on the same band to create an expanded Entrance/Foyer
+      // to keep the layout rectangular and connected.
+      const leftoverW = snapToGrid(nonServiceW - maxLivingW);
+      const leftoverX = snapToGrid(nonServiceX + maxLivingW);
+
+      // Assign the leftover width area as a "Front Yard" (type: "Outdoor").
+      // Ensure its coordinates perfectly align next to the capped Living Room so the entire nonServiceW is filled edge-to-edge.
+      rooms.push(makeRoom("front_yard", "Front Yard", "Outdoor",
+        leftoverX, pubZ.y, leftoverW, finalLivingH));
+  } else if (!isSquare) {
+      // Normal placement if it doesn't violate aspect ratio
+      const fallbackH = livingH >= 12 ? finalLivingH : snapToGrid(pubZ.h - porchH);
+      rooms.push(makeRoom("living", "Living Room", "Public",
+        livingX, pubZ.y, nonServiceW, fallbackH, { openToHall: true }));
+  }
+
+  const livingRoom = rooms.find((r) => r.id === "living");
+  const livingFurniture = buildMandatoryLivingFurnitureSet(livingRoom);
+  if (!livingFurniture) {
+    throw createError("Minimum required area exceeded for the requested configuration.");
+  }
+  livingRoom.furniture = livingFurniture;
+
   if (isLarge) {
     const parkW = clamp(W * 0.4, 10, 18);
     const parkX = porchX + porchW;
     const avail = ba.x + W - parkX;
-    if (avail >= 8) {
+    if (avail >= 8 && !rooms.some(r => r.id === "parking")) {
       rooms.push(makeRoom("parking", "Parking", "Outdoor",
         parkX, porchY, Math.min(parkW, avail), porchH));
     }
   } else if (tier === "standard") {
     const yardW = round(W - porchW - 1);
-    if (yardW > 4) {
+    if (yardW > 4 && !rooms.some(r => r.id === "front_yard")) {
       const yardX = porchX + porchW;
       const avail = ba.x + W - yardX;
       if (avail > 4) {
@@ -333,31 +532,10 @@ function buildHouseLayout(ba, zones, input, tier, edges, serviceSide, entranceAl
     }
   }
 
-  /* ─── SEMI-PRIVATE ZONE: dining + hall ─── */
-  const spZ = zones.semiPrivate;
-  const spNonServiceW = nonServiceW;
-  const spX = serviceSide === "right" ? spZ.x : round(spZ.x + zones.service.w);
-
-  const diningW = clamp(spNonServiceW * 0.45, 8, 14);
-  const diningH = spZ.h; // fill full semi-private height
-  rooms.push(makeRoom("dining", "Dining", "Semi-private",
-    spX, spZ.y, diningW, diningH, { openToHall: true }));
-
-  const hallActualW = round(spNonServiceW - diningW);
-  if (hallActualW >= 5) {
-    rooms.push(makeRoom("hall", "Hall", "Semi-private",
-      round(spX + diningW), spZ.y, hallActualW, diningH,
-      { openToHall: true, circulationWidth: round(hallActualW) }));
-  }
-
-  /* ─── SERVICE CORE ─── */
-  const serviceRooms = placeServiceCore(zones, numBaths, attachedBathCount);
-  rooms.push(...serviceRooms);
-
   /* ─── PRIVATE ZONE: bedrooms + attached baths ─── */
   const pvZ = zones.private;
-  const aBathW = 5;
-  const aBathH = 7;
+  const spZ = zones.semiPrivate;
+  const aBathDepth = 5;  // standard attached bath depth (stacked vertically)
 
   // Bedrooms always start at the rear wall for ventilation
   let bedZoneY = pvZ.y;
@@ -367,53 +545,553 @@ function buildHouseLayout(ba, zones, input, tier, edges, serviceSide, entranceAl
   let bedsInBand = maxBedsInBand;
   let bedsInSide = numBeds - bedsInBand;
 
-  const bandBathCount = Math.min(attachedBathCount, bedsInBand);
-  const totalBathW = bandBathCount * aBathW;
-  const bedAvailW = pvZ.w - totalBathW;
-  const perBedW = round(bedAvailW / bedsInBand);
+  // Pre-compute side column width so main band accounts for it
+  const sideOnLeft = serviceSide === "right";
+  const sideColW_pre = bedsInSide > 0 ? clamp(W * 0.25, 10, 14) : 0;
 
-  let curX = pvZ.x;
+  // Effective main band bounds (exclude side column region)
+  const bandX = sideOnLeft ? snapToGrid(pvZ.x + sideColW_pre) : pvZ.x;
+  const bandW = snapToGrid(pvZ.w - sideColW_pre);
+
+  // ── Pre-placement width check with circuit breaker ──
+  // Baths are now stacked vertically, so they do NOT consume horizontal width
+  let widthValid = false;
+  while (!widthValid) {
+    const effSideColW = (numBeds - bedsInBand) > 0 ? clamp(W * 0.25, 10, 14) : 0;
+    const effBandW = snapToGrid(pvZ.w - effSideColW);
+    const checkPerBedW = effBandW / bedsInBand;
+
+    const masterMinW = (bedsInBand === numBeds) ? 12 : 10;
+    const absoluteMinW = (input && input.plotGaj < 300) ? 9 : 10;
+    const absoluteMasterMinW = (input && input.plotGaj < 300) ? 10 : masterMinW;
+
+    if (checkPerBedW < absoluteMinW || (bedsInBand >= numBeds && checkPerBedW < absoluteMasterMinW)) {
+      if (bedsInBand <= 1) {
+        throw createError("Minimum required area exceeded for the requested configuration.");
+      }
+      bedsInBand--;
+      bedsInSide = numBeds - bedsInBand;
+    } else {
+      widthValid = true;
+    }
+  }
+
+  // Recompute side column and band bounds after width check may have changed bedsInSide
+  const sideColW_final = bedsInSide > 0 ? clamp(W * 0.25, 10, 14) : 0;
+  const bandXFinal = sideOnLeft ? snapToGrid(pvZ.x + sideColW_final) : pvZ.x;
+  const bandWFinal = snapToGrid(pvZ.w - sideColW_final);
+
+  const bandBathCount = Math.min(attachedBathCount, bedsInBand);
+  // No horizontal bath width to subtract — baths are stacked vertically
+  const perBedW = snapToGrid(bandWFinal / bedsInBand);
+
+  let curX = bandXFinal;
+  const bandRight = snapToGrid(bandXFinal + bandWFinal); // right edge of main band
   for (let i = 0; i < bedsInBand; i++) {
     const isMaster = i === 0;
     const bedId = isMaster ? "bed_1" : `bed_${i + 1}`;
     const bedType = isMaster ? "Master Bedroom" : `Bedroom ${i + 1}`;
 
+    // Determine column width for this bedroom
     let bedW;
     if (i === bedsInBand - 1) {
-      // Last bed: fill remaining width minus remaining bath slots
-      const remainingBaths = Math.max(0, bandBathCount - (i + 1)) * aBathW;
-      const thisBath = i < bandBathCount ? aBathW : 0;
-      bedW = round(pvZ.x + pvZ.w - curX - remainingBaths - thisBath);
+      // Last bed: fill remaining width to band edge
+      bedW = snapToGrid(bandRight - curX);
     } else {
-      bedW = isMaster ? clamp(round(perBedW * 1.15), 12, 16) : clamp(perBedW, 10, 14);
+      bedW = isMaster ? clamp(snapToGrid(perBedW * 1.15), 12, 16) : clamp(perBedW, 10, 14);
     }
 
     bedW = Math.max(10, bedW);
-    rooms.push(makeRoom(bedId, bedType, "Private", curX, bedZoneY, bedW, bedZoneH));
-    curX += bedW;
+    // Cap to never exceed remaining band space
+    const maxAvailForBed = snapToGrid(bandRight - curX);
+    bedW = Math.min(bedW, maxAvailForBed);
+
+    // FIX 3: Stack attached bath vertically inside the bedroom column
+    let currentBedY = bedZoneY;
+    let currentBedH = bedZoneH;
 
     if (i < bandBathCount) {
+      // Place attached bath at the top (rear) of the column, spanning full bedW
+      const aBathH = snapToGrid(Math.min(aBathDepth, bedZoneH * 0.35));
       const abId = isMaster ? "attached_bath_1" : `attached_bath_${i + 1}`;
       const abType = isMaster ? "Master Attached Bath" : `Attached Bath ${i + 1}`;
       rooms.push(makeRoom(abId, abType, "Service",
-        curX, bedZoneY, aBathW, Math.min(aBathH, bedZoneH)));
-      curX += aBathW;
+        curX, currentBedY, bedW, aBathH));
+      // Push bedroom start down to avoid overlap
+      currentBedY = snapToGrid(currentBedY + aBathH);
+      currentBedH = snapToGrid(currentBedH - aBathH);
     }
+
+    // Place bedroom using remaining column height
+    rooms.push(makeRoom(bedId, bedType, "Private", curX, currentBedY, bedW, currentBedH));
+    curX += bedW;
   }
 
-  // Side column overflow bedrooms
+  // ── FIX 3: Side column overflow bedrooms span private + semi-private ──
   if (bedsInSide > 0) {
-    const sideOnLeft = serviceSide === "right";
-    const sideColW = clamp(W * 0.25, 10, 14);
-    const sideX = sideOnLeft ? ba.x : round(ba.x + W - sideColW);
-    const sideH = spZ.h;
-    const perSideBedH = round(sideH / bedsInSide);
+    const sideColW = sideColW_final;
+    const sideX = sideOnLeft ? ba.x : snapToGrid(ba.x + W - sideColW);
+    const sideH = pvZ.h + spZ.h;   // spans both private and semi-private zones
+    const sideY = pvZ.y;            // starts at top of private zone
+    const perSideBedH = snapToGrid(sideH / bedsInSide);
+
+    // Enforce max aspect ratio 1:1.6
+    const maxBedH = snapToGrid(sideColW * 1.6);
+    const actualBedH = perSideBedH > maxBedH ? maxBedH : perSideBedH;
 
     for (let i = 0; i < bedsInSide; i++) {
       const idx = bedsInBand + i;
-      const bedH = (i === bedsInSide - 1) ? round(sideH - i * perSideBedH) : perSideBedH;
+      const bedH = (i === bedsInSide - 1 && actualBedH === perSideBedH) ? snapToGrid(sideH - i * actualBedH) : actualBedH;
       rooms.push(makeRoom(`bed_${idx + 1}`, `Bedroom ${idx + 1}`, "Private",
-        sideX, round(spZ.y + i * perSideBedH), sideColW, bedH));
+        sideX, snapToGrid(sideY + i * actualBedH), sideColW, bedH));
+    }
+    
+    // Fill the void if we capped the height
+    if (perSideBedH > maxBedH) {
+        const usedH = snapToGrid(bedsInSide * actualBedH);
+        const remainH = snapToGrid(sideH - usedH);
+        if (remainH > 0) {
+            const wantsStore = input.preferences && 
+                (input.preferences.store_room === "requested" || input.preferences.store_room === "required" || input.preferences.utility === "combined");
+            if (wantsStore) {
+                rooms.push(makeRoom("store_room", "Store Room", "Semi-private",
+                  sideX, snapToGrid(sideY + usedH), sideColW, remainH));
+            }
+        }
+    }
+  }
+
+  /* ─── SEMI-PRIVATE ZONE: [side column] + dining + hall ─── */
+  const spNonServiceW = nonServiceW;
+  const spX = serviceSide === "right" ? spZ.x : snapToGrid(spZ.x + zones.service.w);
+
+  // Reduce available width by side column when active
+  const spAvailW = snapToGrid(spNonServiceW - sideColW_final);
+  if (isSquare && squareLivingFrame) {
+    const spAvailX = (bedsInSide > 0 && serviceSide === "right")
+      ? snapToGrid(spX + sideColW_final)
+      : spX;
+    const maxDiningX = snapToGrid(spAvailX + spAvailW - 8);
+    const diningX = snapToGrid(clamp(squareLivingFrame.x, spAvailX, maxDiningX));
+    const diningW = snapToGrid(Math.min(squareLivingFrame.width, snapToGrid(spAvailX + spAvailW - diningX)));
+    const diningH = spZ.h;
+
+    if (diningW >= 8) {
+      rooms.push(makeRoom("dining", "Dining", "Semi-private",
+        diningX, spZ.y, diningW, diningH, { openToHall: true }));
+    }
+
+    if (!squareHasPublicHall) {
+      const hallActualW = snapToGrid(spAvailW - diningW);
+      if (hallActualW >= 5) {
+        const hallX = snapToGrid(diningX + diningW);
+        rooms.push(makeRoom("hall", "Hall", "Semi-private",
+          hallX, spZ.y, hallActualW, diningH,
+          { openToHall: true, circulationWidth: snapToGrid(hallActualW) }));
+      }
+    }
+  } else {
+    const diningW = clamp(spAvailW * 0.5, 8, 14);
+    const diningH = spZ.h; // fill full semi-private height
+    // Offset dining X past the side column if it's on the left (serviceRight → sideOnLeft)
+    const diningX = (bedsInSide > 0 && serviceSide === "right")
+      ? snapToGrid(spX + sideColW_final)
+      : spX;
+    rooms.push(makeRoom("dining", "Dining", "Semi-private",
+      diningX, spZ.y, diningW, diningH, { openToHall: true }));
+
+    const hallActualW = snapToGrid(spAvailW - diningW);
+    if (hallActualW >= 5) {
+      rooms.push(makeRoom("hall", "Hall", "Semi-private",
+        snapToGrid(diningX + diningW), spZ.y, hallActualW, diningH,
+        { openToHall: true, circulationWidth: snapToGrid(hallActualW) }));
+    }
+  }
+
+  /* ─── SERVICE CORE ─── */
+  const serviceRooms = placeServiceCore(zones, numBaths, attachedBathCount);
+  rooms.push(...serviceRooms);
+
+  const masterBed = rooms.find((r) => r.id === "bed_1");
+  if (masterBed) {
+      const masterFurn = buildMandatoryMasterBedFurnitureSet(masterBed);
+      if (!masterFurn) {
+          throw createError("Master Bedroom furniture cannot fit legally with clearance.");
+      }
+      masterBed.furniture = masterFurn;
+  }
+
+  // ── FIX 4: Space redistribution ──
+  return redistributeSpace(rooms, ba, input.preferences || {});
+}
+
+/* ═══════════════════════════════════════════════════════════
+   FIX 4 — SPACE REDISTRIBUTION (Post-Placement)
+   ═══════════════════════════════════════════════════════════ */
+
+function redistributeSpace(rooms, ba, preferences) {
+  const totalArea = ba.width * ba.height;
+  const usedArea = rooms.reduce((s, r) => s + r.width * r.height, 0);
+  const deadSpaceRatio = (totalArea - usedArea) / totalArea;
+
+  // Step 1: Keep dead space as a soft quality signal.
+  // Do not hard-reject here; later scoring already penalizes poor compactness.
+
+  // If dead space is negligible, skip expansion
+  if (deadSpaceRatio <= 0.01) return rooms;
+
+  // Step 3: Preference multipliers
+  const prefMultiplier = (roomType) => {
+    const key = roomType.toLowerCase().replace(/\s+/g, "_");
+    const pref = preferences[key] || preferences[roomType] || "standard";
+    if (pref === "compact") return 1.0;
+    if (pref === "large") return 1.5;
+    return 1.25; // "standard" default
+  };
+
+  let remainingSpace = totalArea - usedArea;
+
+  const overlapY = (a, b) => {
+    const top = Math.max(a.y, b.y);
+    const bottom = Math.min(snapToGrid(a.y + a.height), snapToGrid(b.y + b.height));
+    return snapToGrid(bottom - top) > 0.5;
+  };
+
+  const overlapX = (a, b) => {
+    const left = Math.max(a.x, b.x);
+    const right = Math.min(snapToGrid(a.x + a.width), snapToGrid(b.x + b.width));
+    return snapToGrid(right - left) > 0.5;
+  };
+
+  const growIntoVoid = (room, axis, direction, requestedDelta) => {
+    let delta = snapToGrid(Math.max(0, requestedDelta));
+    if (delta <= 0) return 0;
+
+    if (axis === "width" && direction === "right") {
+      const edge = snapToGrid(room.x + room.width);
+      let limit = snapToGrid(ba.x + ba.width);
+      for (const other of rooms) {
+        if (other.id === room.id || !overlapY(room, other)) continue;
+        if (other.x >= edge - 0.5) limit = Math.min(limit, other.x);
+      }
+      const gap = snapToGrid(limit - edge);
+      delta = snapToGrid(Math.min(delta, gap));
+      if (delta > 0) room.width = snapToGrid(room.width + delta);
+      return delta;
+    }
+
+    if (axis === "width" && direction === "left") {
+      const edge = room.x;
+      let limit = ba.x;
+      for (const other of rooms) {
+        if (other.id === room.id || !overlapY(room, other)) continue;
+        const otherEdge = snapToGrid(other.x + other.width);
+        if (otherEdge <= edge + 0.5) limit = Math.max(limit, otherEdge);
+      }
+      const gap = snapToGrid(edge - limit);
+      delta = snapToGrid(Math.min(delta, gap));
+      if (delta > 0) {
+        room.x = snapToGrid(room.x - delta);
+        room.width = snapToGrid(room.width + delta);
+      }
+      return delta;
+    }
+
+    if (axis === "height" && direction === "bottom") {
+      const edge = snapToGrid(room.y + room.height);
+      let limit = snapToGrid(ba.y + ba.height);
+      for (const other of rooms) {
+        if (other.id === room.id || !overlapX(room, other)) continue;
+        if (other.y >= edge - 0.5) limit = Math.min(limit, other.y);
+      }
+      const gap = snapToGrid(limit - edge);
+      delta = snapToGrid(Math.min(delta, gap));
+      if (delta > 0) room.height = snapToGrid(room.height + delta);
+      return delta;
+    }
+
+    if (axis === "height" && direction === "top") {
+      const edge = room.y;
+      let limit = ba.y;
+      for (const other of rooms) {
+        if (other.id === room.id || !overlapX(room, other)) continue;
+        const otherEdge = snapToGrid(other.y + other.height);
+        if (otherEdge <= edge + 0.5) limit = Math.max(limit, otherEdge);
+      }
+      const gap = snapToGrid(edge - limit);
+      delta = snapToGrid(Math.min(delta, gap));
+      if (delta > 0) {
+        room.y = snapToGrid(room.y - delta);
+        room.height = snapToGrid(room.height + delta);
+      }
+      return delta;
+    }
+
+    return 0;
+  };
+
+  // Dynamic area redistribution for house private zone: prioritize master, then other bedrooms.
+  const privateBeds = rooms
+    .filter((r) => r.type === "Master Bedroom" || (r.type.includes("Bedroom") && !r.type.includes("Bath")))
+    .sort((a, b) => {
+      if (a.type === "Master Bedroom" && b.type !== "Master Bedroom") return -1;
+      if (b.type === "Master Bedroom" && a.type !== "Master Bedroom") return 1;
+      return a.id.localeCompare(b.id);
+    });
+
+  for (const bed of privateBeds) {
+    if (remainingSpace <= 0.5) break;
+
+    const ratioCap = snapToGrid(1.8, 0.1);
+
+    const maxGrowW = snapToGrid(Math.max(0, snapToGrid(bed.height * ratioCap) - bed.width));
+    if (maxGrowW > 0) {
+      const budgetW = snapToGrid(remainingSpace / Math.max(0.5, bed.height));
+      let askW = snapToGrid(Math.min(maxGrowW, budgetW));
+      const grownRight = growIntoVoid(bed, "width", "right", askW);
+      if (grownRight > 0) {
+        remainingSpace = snapToGrid(Math.max(0, remainingSpace - grownRight * bed.height));
+        askW = snapToGrid(Math.max(0, askW - grownRight));
+      }
+      if (askW > 0 && remainingSpace > 0.5) {
+        const grownLeft = growIntoVoid(bed, "width", "left", askW);
+        if (grownLeft > 0) {
+          remainingSpace = snapToGrid(Math.max(0, remainingSpace - grownLeft * bed.height));
+        }
+      }
+    }
+
+    const maxGrowH = snapToGrid(Math.max(0, snapToGrid(bed.width * ratioCap) - bed.height));
+    if (maxGrowH > 0 && remainingSpace > 0.5) {
+      const budgetH = snapToGrid(remainingSpace / Math.max(0.5, bed.width));
+      let askH = snapToGrid(Math.min(maxGrowH, budgetH));
+      const grownBottom = growIntoVoid(bed, "height", "bottom", askH);
+      if (grownBottom > 0) {
+        remainingSpace = snapToGrid(Math.max(0, remainingSpace - grownBottom * bed.width));
+        askH = snapToGrid(Math.max(0, askH - grownBottom));
+      }
+      if (askH > 0 && remainingSpace > 0.5) {
+        const grownTop = growIntoVoid(bed, "height", "top", askH);
+        if (grownTop > 0) {
+          remainingSpace = snapToGrid(Math.max(0, remainingSpace - grownTop * bed.width));
+        }
+      }
+    }
+  }
+
+  // Any leftover from ratio-capped bedroom redistribution gets absorbed by Hall as integrated storage/puja.
+  const hallRoom = rooms.find((r) => r.type === "Hall");
+  if (hallRoom && remainingSpace > 0.5) {
+    let absorbed = 0;
+    const absorbPlan = [
+      ["width", "right"],
+      ["width", "left"],
+      ["height", "bottom"],
+      ["height", "top"],
+    ];
+
+    for (const [axis, direction] of absorbPlan) {
+      if (remainingSpace <= 0.5) break;
+      const baseDim = axis === "width" ? hallRoom.height : hallRoom.width;
+      const ask = snapToGrid(remainingSpace / Math.max(0.5, baseDim));
+      const grown = growIntoVoid(hallRoom, axis, direction, ask);
+      if (grown > 0) {
+        const gain = snapToGrid(grown * baseDim);
+        absorbed = snapToGrid(absorbed + gain);
+        remainingSpace = snapToGrid(Math.max(0, remainingSpace - gain));
+      }
+    }
+
+    if (absorbed > 0) {
+      hallRoom.integratedUse = "storage-puja";
+    }
+  }
+
+  // Step 2: Safe expansion in priority order
+  const expansionPlan = [
+    { match: (r) => r.type === "Master Bedroom",                      axis: "width",  maxRatio: 1.6 },
+    { match: (r) => r.type.includes("Bedroom") && r.type !== "Master Bedroom", axis: "width",  maxRatio: 1.8 },
+    { match: (r) => r.type === "Living Room",                          axis: "height", maxRatio: null },
+    { match: (r) => r.type === "Kitchen",                              axis: "height", maxRatio: null },
+    { match: (r) => r.type === "Dining",                               axis: "width",  maxRatio: null },
+    { match: (r) => r.type === "Hall",                                 axis: "width",  maxRatio: null },
+  ];
+
+  for (const plan of expansionPlan) {
+    if (remainingSpace <= 0.5) break;
+
+    const targets = rooms.filter(plan.match);
+    for (const room of targets) {
+      if (remainingSpace <= 0.5) break;
+
+      const mult = prefMultiplier(room.type);
+      if (mult <= 1.0) continue; // compact → skip
+
+      const currentDim = plan.axis === "width" ? room.width : room.height;
+      const otherDim   = plan.axis === "width" ? room.height : room.width;
+      const targetDim  = snapToGrid(currentDim * mult);
+
+      // Enforce aspect ratio cap if specified
+      let maxDim = targetDim;
+      if (plan.maxRatio) {
+        maxDim = Math.min(targetDim, snapToGrid(otherDim * plan.maxRatio));
+      }
+
+      let delta = snapToGrid(Math.max(0, maxDim - currentDim));
+      if (delta <= 0) continue;
+
+      // Cap delta so shifting adjacent rooms doesn't push them outside ba
+      if (plan.axis === "width") {
+        // Find the maximum safe delta: rooms to the right must not exceed ba boundary
+        const roomRight = room.x + room.width;
+        const rightRooms = rooms.filter(r => r.id !== room.id && r.x >= roomRight - 0.5);
+        for (const rr of rightRooms) {
+          const rrRight = rr.x + rr.width + delta;
+          if (rrRight > ba.x + ba.width) {
+            delta = snapToGrid(Math.max(0, ba.x + ba.width - (rr.x + rr.width)));
+          }
+        }
+      } else {
+        // height expansion: cap by rooms below
+        const roomBottom = room.y + room.height;
+        const belowRooms = rooms.filter(r => r.id !== room.id && r.y >= roomBottom - 0.5);
+        for (const br of belowRooms) {
+          const brBottom = br.y + br.height + delta;
+          if (brBottom > ba.y + ba.height) {
+            delta = snapToGrid(Math.max(0, ba.y + ba.height - (br.y + br.height)));
+          }
+        }
+      }
+
+      if (delta <= 0) continue;
+
+      // Apply expansion
+      if (plan.axis === "width") {
+        room.width = snapToGrid(room.width + delta);
+        // Shift rooms to the right
+        const roomRight = room.x + room.width - delta; // original right edge
+        for (const r of rooms) {
+          if (r.id !== room.id && r.x >= roomRight - 0.5) {
+            r.x = snapToGrid(r.x + delta);
+          }
+        }
+      } else {
+        room.height = snapToGrid(room.height + delta);
+        // Shift rooms below
+        const roomBottom = room.y + room.height - delta; // original bottom edge
+        for (const r of rooms) {
+          if (r.id !== room.id && r.y >= roomBottom - 0.5) {
+            r.y = snapToGrid(r.y + delta);
+          }
+        }
+      }
+
+      remainingSpace -= delta * otherDim;
+    }
+  }
+
+  // Fix 3.1: Eliminate internal voids in horizontal bands
+  const yBands = new Set(rooms.map(r => r.y));
+  for (const y of yBands) {
+      const bandRooms = rooms.filter(r => r.y === y).sort((a,b) => a.x - b.x);
+      for (let i = 0; i < bandRooms.length - 1; i++) {
+          const r1 = bandRooms[i];
+          const r2 = bandRooms[i+1];
+          const end1 = snapToGrid(r1.x + r1.width);
+          const start2 = snapToGrid(r2.x);
+          if (start2 > end1) {
+              const gap = snapToGrid(start2 - end1);
+              const maxExpand = snapToGrid((r1.height * 2.0) - r1.width);
+              if (maxExpand > 0) {
+                  r1.width = snapToGrid(r1.width + Math.min(gap, maxExpand));
+              }
+          }
+      }
+  }
+
+  // Fix 3.1: Eliminate internal voids in vertical bands
+  const xBands = new Set(rooms.map(r => r.x));
+  for (const x of xBands) {
+      const colRooms = rooms.filter(r => r.x === x).sort((a,b) => a.y - b.y);
+      for (let i = 0; i < colRooms.length - 1; i++) {
+          const r1 = colRooms[i];
+          const r2 = colRooms[i+1];
+          const end1 = snapToGrid(r1.y + r1.height);
+          const start2 = snapToGrid(r2.y);
+          if (start2 > end1) {
+              const gap = snapToGrid(start2 - end1);
+              const maxExpand = snapToGrid((r1.width * 2.0) - r1.height);
+              if (maxExpand > 0) {
+                  r1.height = snapToGrid(r1.height + Math.min(gap, maxExpand));
+              }
+          }
+      }
+  }
+
+  // Fix 3.2: Final boundary flush: force edge rooms to bounds if unblocked
+  for (const r of rooms) {
+    if (r.type === "Outdoor" || r.type === "Front Yard" || r.type === "Parking" || r.type === "Balcony") continue;
+    
+    // Right boundary gap
+    const rightGap = snapToGrid(snapToGrid(ba.x + ba.width) - snapToGrid(r.x + r.width));
+    if (rightGap > 0) {
+      const isBlockedRight = rooms.some(other =>
+        other.id !== r.id &&
+        other.x >= snapToGrid(r.x + r.width) &&
+        r.y < snapToGrid(other.y + other.height) &&
+        snapToGrid(r.y + r.height) > other.y
+      );
+      if (!isBlockedRight) {
+        const potentialW = snapToGrid(r.width + rightGap);
+        if (potentialW / Math.max(0.1, r.height) <= 2.0) {
+           r.width = potentialW;
+        } else {
+           r.width = snapToGrid(r.height * 2.0);
+        }
+      }
+    }
+
+    // Left boundary gap
+    const leftGap = snapToGrid(r.x - ba.x);
+    if (leftGap > 0) {
+      const isBlockedLeft = rooms.some(other =>
+        other.id !== r.id &&
+        snapToGrid(other.x + other.width) <= r.x &&
+        r.y < snapToGrid(other.y + other.height) &&
+        snapToGrid(r.y + r.height) > other.y
+      );
+      if (!isBlockedLeft) {
+          const potentialW = snapToGrid(r.width + leftGap);
+          if (potentialW / Math.max(0.1, r.height) <= 2.0) {
+              r.x = snapToGrid(r.x - leftGap);
+              r.width = potentialW;
+          } else {
+              const expand = snapToGrid(r.height * 2.0) - r.width;
+              if (expand > 0) {
+                  r.x = snapToGrid(r.x - expand);
+                  r.width = snapToGrid(r.width + expand);
+              }
+          }
+      }
+    }
+
+    // Bottom boundary gap
+    const bottomGap = snapToGrid(snapToGrid(ba.y + ba.height) - snapToGrid(r.y + r.height));
+    if (bottomGap > 0) {
+      const isBlockedBottom = rooms.some(other =>
+        other.id !== r.id &&
+        other.y >= snapToGrid(r.y + r.height) &&
+        r.x < snapToGrid(other.x + other.width) &&
+        snapToGrid(r.x + r.width) > other.x
+      );
+      if (!isBlockedBottom) {
+        const potentialH = snapToGrid(r.height + bottomGap);
+        if (potentialH / Math.max(0.1, r.width) <= 2.0) {
+            r.height = potentialH;
+        } else {
+            r.height = snapToGrid(r.width * 2.0);
+        }
+      }
     }
   }
 
@@ -447,8 +1125,24 @@ function buildFlatLayout(ba, input, serviceSide, entranceAlign) {
   /* ─── Entry at front (bottom) ─── */
   const entryH = clamp(round(H * 0.12), 4, 7);
   const entryY = round(ba.y + H - entryH);
+
+  const entryW = snapToGrid(clamp(nonServiceW, 5, 8));
+  let entryX = nonServiceX;
+  let leftoverX = snapToGrid(nonServiceX + entryW);
+  const leftoverW = snapToGrid(nonServiceW - entryW);
+  
+  if (entranceAlign === "centered") {
+      entryX = snapToGrid(nonServiceX + leftoverW);
+      leftoverX = nonServiceX;
+  }
+
   rooms.push(makeRoom("entrance", "Entrance", "Public",
-    nonServiceX, entryY, nonServiceW, entryH));
+    entryX, entryY, entryW, entryH));
+
+  if (leftoverW > 0) {
+      rooms.push(makeRoom("front_balcony", "Balcony", "Outdoor",
+        leftoverX, entryY, leftoverW, entryH));
+  }
 
   /* ─── Living/Dining hub ─── */
   const livingH = clamp(round(H * 0.28), 10, 18);
@@ -478,7 +1172,14 @@ function buildFlatLayout(ba, input, serviceSide, entranceAlign) {
 
   /* ─── Bedrooms on top (external walls) ─── */
   const bedroomTopY = ba.y;
-  const bedroomH = round(livingY - ba.y);
+  const bedroomH = Math.min(round(livingY - ba.y), 16);
+  const bedroomBottomY = snapToGrid(bedroomTopY + bedroomH);
+  const bridgeHallH = snapToGrid(Math.max(0, livingY - bedroomBottomY));
+  if (bridgeHallH >= CORRIDOR_MIN_WIDTH) {
+    rooms.push(makeRoom("flat_hall", "Hall", "Semi-private",
+      nonServiceX, bedroomBottomY, nonServiceW, bridgeHallH,
+      { openToHall: true, circulationWidth: snapToGrid(nonServiceW) }));
+  }
   const aBathW = 5, aBathH = Math.min(7, bedroomH);
 
   if (numBeds === 1) {
@@ -491,9 +1192,14 @@ function buildFlatLayout(ba, input, serviceSide, entranceAlign) {
     }
   } else {
     // Distribute bedrooms across top, each touching an external wall
-    const totalBathW = Math.min(attachedBathCount, numBeds) * aBathW;
-    const bedTotalW = W - totalBathW;
-    const perBedW = round(bedTotalW / numBeds);
+    const totalBathW = snapToGrid(Math.min(attachedBathCount, numBeds) * aBathW);
+    const bedTotalW = snapToGrid(W - totalBathW);
+    const perBedW = snapToGrid(bedTotalW / numBeds);
+    const minFlatBedW = snapToGrid(input.plotGaj <= 200 ? 9 : 10);
+
+    if (perBedW < minFlatBedW) {
+      throw createError("Minimum required area exceeded for the requested configuration.");
+    }
 
     let curX = ba.x;
     for (let i = 0; i < numBeds; i++) {
@@ -506,7 +1212,9 @@ function buildFlatLayout(ba, input, serviceSide, entranceAlign) {
       if (i === numBeds - 1) {
         bedW = round(ba.x + W - curX - (hasBath ? aBathW : 0));
       } else {
-        bedW = isMaster ? clamp(round(perBedW * 1.1), 10, 16) : clamp(perBedW, 10, 14);
+        bedW = isMaster
+          ? clamp(round(perBedW * 1.1), minFlatBedW, 16)
+          : clamp(perBedW, minFlatBedW, 14);
       }
       bedW = Math.max(8, bedW);
 
@@ -548,6 +1256,21 @@ function buildFlatLayout(ba, input, serviceSide, entranceAlign) {
 
   rooms.push(makeRoom("balcony_1", "Balcony", "Outdoor",
     balcExternalX, livingY, balconyW, balconyH));
+
+  const lrRoom = rooms.find((r) => r.id === "living");
+  if (lrRoom) {
+      const livingFurniture = buildMandatoryLivingFurnitureSet(lrRoom);
+      if (!livingFurniture) throw createError("Minimum required area exceeded for Living Room.");
+      lrRoom.furniture = livingFurniture;
+  }
+  const fmbRoom = rooms.find((r) => r.id === "bed_1");
+  if (fmbRoom) {
+      const fmbFurniture = buildMandatoryMasterBedFurnitureSet(fmbRoom);
+      if (!fmbFurniture) {
+          throw createError("Master Bedroom furniture cannot fit legally with clearance.");
+      }
+      fmbRoom.furniture = fmbFurniture;
+  }
 
   return rooms;
 }
@@ -901,7 +1624,7 @@ function generateCandidates(ba, input, tier, edges) {
             if (isFlat) {
               rooms = buildFlatLayout(ba, input, serviceSide, entranceAlign);
             } else {
-              const zones = createZones(ba, serviceSide, ratios);
+              const zones = createZones(ba, serviceSide, ratios, input);
               rooms = buildHouseLayout(ba, zones, input, tier, edges, serviceSide, entranceAlign);
             }
 
@@ -921,19 +1644,32 @@ function generateCandidates(ba, input, tier, edges) {
             const graph = buildAdjacencyGraph(rooms);
             const validation = validateLayout(rooms, graph, input.dwellingType);
 
-            // Hard rejection: connectivity
-            if (!validation.connected) continue;
+            // Hard rejection: connectivity for core indoor program.
+            // Outdoor elements (e.g., balconies/front yard) may be detached by design.
+            const entrance = rooms.find(r => r.type === "Entrance" || r.id === "entrance");
+            if (!entrance) continue;
 
-            // Hard rejection: flat-specific
-            if (isFlat) {
-              if (validation.errors.includes("flat_no_shaft")) continue;
-              if (validation.errors.includes("flat_no_balcony")) continue;
-              const bedrooms = rooms.filter(r => r.type.includes("Bedroom") || r.type === "Master Bedroom");
-              if (bedrooms.some(r => r.ventilation === "none")) continue;
+            const visited = new Set([entrance.id]);
+            const queue = [entrance.id];
+            while (queue.length > 0) {
+              const cur = queue.shift();
+              for (const neighbor of (graph[cur] || [])) {
+                if (!visited.has(neighbor)) {
+                  visited.add(neighbor);
+                  queue.push(neighbor);
+                }
+              }
             }
 
+            const hasDisconnectedIndoor = rooms.some(r => {
+              const isOutdoor = r.zone === "Outdoor" || r.type === "Balcony" || r.type === "Front Yard" || r.type === "Parking";
+              return !isOutdoor && !visited.has(r.id);
+            });
+
+            if (hasDisconnectedIndoor) continue;
+
             // Score (soft penalties for other validation errors)
-            const zones = isFlat ? {} : createZones(ba, serviceSide, ratios);
+            const zones = isFlat ? {} : createZones(ba, serviceSide, ratios, input);
             const { score, deadSpace } = scoreLayout(
               rooms, zones, ba, graph, validation, ventWarnings,
               input.dwellingType, input.vastuMode
@@ -1001,6 +1737,16 @@ export function generateSmartLayout(rawInput) {
       id: r.id, type: r.type, zone: r.zone,
       x: round(r.x), y: round(r.y), width: round(r.width), height: round(r.height),
       ventilation: r.ventilation, openToHall: r.openToHall,
+      integratedUse: r.integratedUse || null,
+      furniture: Array.isArray(r.furniture)
+        ? r.furniture.map((f) => ({
+            type: f.type,
+            x: round(snapToGrid(f.x)),
+            y: round(snapToGrid(f.y)),
+            width: round(snapToGrid(f.width)),
+            height: round(snapToGrid(f.height)),
+          }))
+        : [],
     })),
     meta: {
       dwellingType: input.dwellingType,
