@@ -151,6 +151,7 @@ function App({
   const [error, setError] = useState("");
   const [importJson, setImportJson] = useState("");
   const [showImport, setShowImport] = useState(false);
+  const [schemaCopyFeedback, setSchemaCopyFeedback] = useState("");
 
   const [activeView, setActiveView] = useState("editor");
   const [savedDesigns, setSavedDesigns] = useState([]);
@@ -553,6 +554,37 @@ function App({
     }
   };
 
+  const handleCopyLayoutSchema = async () => {
+    const payload = {
+      plot: {
+        width: plot.plotWidth,
+        height: plot.plotHeight,
+        gaj: plot.plotGaj,
+        shape: plot.plotShape,
+        front: form.frontDirection,
+      },
+      boundaries: normalizeBoundaries(boundaries, form.frontDirection),
+      layout: roomsDraft.map((room) => ({
+        id: room.id,
+        type: room.type || room.roomType,
+        zone: room.zone || room.roomType,
+        x: room.x,
+        y: room.y,
+        width: room.width,
+        height: room.height,
+      })),
+    };
+
+    try {
+      await navigator.clipboard.writeText(JSON.stringify(payload, null, 2));
+      setSchemaCopyFeedback("Copied!");
+      setTimeout(() => setSchemaCopyFeedback(""), 1800);
+    } catch {
+      setSchemaCopyFeedback("Failed");
+      setTimeout(() => setSchemaCopyFeedback(""), 1800);
+    }
+  };
+
   const handleSubmit = (event) => {
     event.preventDefault();
 
@@ -606,54 +638,73 @@ function App({
   return (
     <div className={`app-frame theme-${themeMode}`}>
       <div className="app-utility-row">
-        <div className="app-utility-controls">
-          <div className="theme-switch app-utility-theme" role="group" aria-label="Theme mode">
+        <div className="app-utility-cluster">
+          <div className="app-nav-identity">
+            <h2>ArchFlow</h2>
+            <span>Layout Generator</span>
+          </div>
+
+          <div className="workspace-view-toggle app-nav-toggle" role="group" aria-label="Workspace view">
             <button
               type="button"
-              className={`theme-btn ${themeMode === "light" ? "active" : ""}`}
-              onClick={() => setThemeMode("light")}
+              className={`view-toggle-btn ${activeView === "editor" ? "active" : ""}`}
+              onClick={() => setActiveView("editor")}
             >
-              Light
+              Editor
             </button>
             <button
               type="button"
-              className={`theme-btn ${themeMode === "dark" ? "active" : ""}`}
-              onClick={() => setThemeMode("dark")}
+              className={`view-toggle-btn ${activeView === "designs" ? "active" : ""}`}
+              onClick={() => setActiveView("designs")}
             >
-              Dark
+              My Designs
             </button>
           </div>
 
-          <div className="app-profile" ref={profileMenuRef}>
+          <div className="app-utility-controls">
             <button
               type="button"
-              className="app-profile-trigger"
-              onClick={() => setIsProfileMenuOpen((current) => !current)}
-              aria-haspopup="menu"
-              aria-expanded={isProfileMenuOpen}
+              className={`theme-icon-toggle ${themeMode === "dark" ? "dark" : "light"}`}
+              onClick={() => setThemeMode((current) => (current === "dark" ? "light" : "dark"))}
+              aria-label={`Switch to ${themeMode === "dark" ? "light" : "dark"} mode`}
+              title={`Switch to ${themeMode === "dark" ? "light" : "dark"} mode`}
             >
-              <span className="app-profile-avatar" aria-hidden="true">{avatarInitial}</span>
-              <span className="app-profile-name">{displayName}</span>
-              <span className="app-profile-caret" aria-hidden="true" />
+              <span className="theme-icon-sun" aria-hidden="true">☀</span>
+              <span className="theme-icon-moon" aria-hidden="true">☾</span>
+              <span className="theme-icon-thumb" aria-hidden="true" />
             </button>
 
-            {isProfileMenuOpen ? (
-              <div className="app-profile-menu" role="menu">
-                <button
-                  type="button"
-                  className="app-profile-menu-item"
-                  role="menuitem"
-                  onClick={() => {
-                    setIsProfileMenuOpen(false);
-                    if (typeof onAuthExpired === "function") {
-                      onAuthExpired();
-                    }
-                  }}
-                >
-                  Logout
-                </button>
-              </div>
-            ) : null}
+            <div className="app-profile" ref={profileMenuRef}>
+              <button
+                type="button"
+                className="app-profile-trigger"
+                onClick={() => setIsProfileMenuOpen((current) => !current)}
+                aria-haspopup="menu"
+                aria-expanded={isProfileMenuOpen}
+              >
+                <span className="app-profile-avatar" aria-hidden="true">{avatarInitial}</span>
+                <span className="app-profile-name">{displayName}</span>
+                <span className="app-profile-caret" aria-hidden="true" />
+              </button>
+
+              {isProfileMenuOpen ? (
+                <div className="app-profile-menu" role="menu">
+                  <button
+                    type="button"
+                    className="app-profile-menu-item"
+                    role="menuitem"
+                    onClick={() => {
+                      setIsProfileMenuOpen(false);
+                      if (typeof onAuthExpired === "function") {
+                        onAuthExpired();
+                      }
+                    }}
+                  >
+                    Logout
+                  </button>
+                </div>
+              ) : null}
+            </div>
           </div>
         </div>
       </div>
@@ -661,37 +712,9 @@ function App({
       <main className={`app-shell theme-${themeMode}`}>
         <section className="controls sidebar-shell">
           <div className="sidebar-top-zone">
-            <div className="sidebar-project">
-              <h2>Project Alpha</h2>
-              <p>Residential Plan</p>
-            </div>
-
-            <div className="workspace-view-toggle" role="group" aria-label="Workspace view">
-              <button
-                type="button"
-                className={`view-toggle-btn ${activeView === "editor" ? "active" : ""}`}
-                onClick={() => setActiveView("editor")}
-              >
-                Editor
-              </button>
-              <button
-                type="button"
-                className={`view-toggle-btn ${activeView === "designs" ? "active" : ""}`}
-                onClick={() => setActiveView("designs")}
-              >
-                My Designs
-              </button>
-            </div>
-
-            <h1>Interactive Floor Plan Editor</h1>
-            <p className="message">
-              Choose the plot and room counts, generate the starting layout, then
-              fine-tune it directly on the canvas.
-            </p>
-
-            <form onSubmit={handleSubmit} className="sidebar-form">
+            <form id="layout-generator-form" onSubmit={handleSubmit} className="sidebar-form">
               <div className="sidebar-card">
-                <h3 className="sidebar-card-title">Plot Configuration</h3>
+                <h3 className="sidebar-section-title">Plot Details</h3>
                 <label>
                   Plot Size (Gaj)
                   <input
@@ -736,7 +759,7 @@ function App({
               </div>
 
               <div className="sidebar-card">
-                <h3 className="sidebar-card-title">Room Requirements</h3>
+                <h3 className="sidebar-section-title">Rooms</h3>
                 <label>
                   Dwelling Type
                   <CustomSelect
@@ -778,7 +801,7 @@ function App({
               </div>
 
               <div className="sidebar-card">
-                <h3 className="sidebar-card-title">Plot Boundaries</h3>
+                <h3 className="sidebar-section-title">Setbacks & Boundaries</h3>
                 <div className="boundary-toggles">
                   <p className="boundary-toggles-hint">Mark sides as blocked by neighbors or open for ventilation</p>
                   <p className="boundary-front-note">
@@ -803,7 +826,7 @@ function App({
               </div>
 
               <div className="sidebar-card engine-toggle">
-                <h3 className="sidebar-card-title">Engine</h3>
+                <h3 className="sidebar-section-title">Engine</h3>
                 <label className="engine-toggle-label">
                   <strong>Layout Engine</strong>
                   <CustomSelect
@@ -818,17 +841,31 @@ function App({
                 </label>
               </div>
 
-              <button type="submit" className="sidebar-primary-cta">Generate Layout</button>
+              <button
+                type="submit"
+                className="sidebar-primary-cta"
+                disabled={isLoading}
+              >
+                {isLoading ? "Generating..." : "Generate Layout"}
+              </button>
             </form>
 
             <div className="import-container sidebar-card sidebar-secondary-card">
-              <h3 className="sidebar-card-title">Import / Export</h3>
+              <h3 className="sidebar-section-title">Import / Export</h3>
               <button
                 type="button"
-                className="toggle-import-btn"
+                className="sidebar-secondary-btn"
                 onClick={() => setShowImport(!showImport)}
               >
                 {showImport ? "Hide Import" : "Import Layout from JSON"}
+              </button>
+
+              <button
+                type="button"
+                className={`sidebar-secondary-btn ${schemaCopyFeedback ? "success" : ""}`}
+                onClick={handleCopyLayoutSchema}
+              >
+                {schemaCopyFeedback || "Copy Layout Schema"}
               </button>
 
               {showImport ? (
@@ -842,7 +879,7 @@ function App({
                   />
                   <button
                     type="button"
-                    className="apply-import-btn"
+                    className="sidebar-secondary-btn"
                     onClick={handleImportLayout}
                   >
                     Apply Imported Layout
@@ -852,7 +889,6 @@ function App({
             </div>
 
             <div className="sidebar-card design-save-card">
-              <h3 className="sidebar-card-title">Design Saving</h3>
               <label>
                 Design Name
                 <input
@@ -867,7 +903,7 @@ function App({
               <div className="design-save-actions">
                 <button
                   type="button"
-                  className="sidebar-primary-cta"
+                  className="sidebar-section-primary-btn"
                   onClick={handleSaveDesign}
                   disabled={isSavingDesign || isLoading}
                 >
@@ -875,7 +911,7 @@ function App({
                 </button>
                 <button
                   type="button"
-                  className="toggle-import-btn"
+                  className="sidebar-secondary-btn"
                   onClick={handleNewDesign}
                 >
                   New Design
@@ -898,7 +934,7 @@ function App({
             {error ? <p className="message error">{error}</p> : null}
 
             <div className="spec-list sidebar-card sidebar-secondary-card sidebar-meta-card">
-              <h3 className="sidebar-card-title">Current Plot</h3>
+              <h3 className="sidebar-section-title">Current Plot</h3>
               <p>Current plot: {plot.plotGaj ?? form.plotGaj} Gaj</p>
               <p>Shape: {plot.plotShape ?? form.plotShape}</p>
               <p>

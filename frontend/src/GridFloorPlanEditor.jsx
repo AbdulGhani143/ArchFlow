@@ -605,7 +605,7 @@ function roomTextureLines(texture, roomWidthPx, roomHeightPx) {
           key={`garden-a-${i}`}
           listening={false}
           points={[i, 0, i + roomHeightPx, roomHeightPx]}
-          stroke="rgba(75, 101, 81, 0.22)"
+          stroke="rgba(37, 99, 235, 0.18)"
           strokeWidth={0.7}
           opacity={0.32}
         />,
@@ -615,7 +615,7 @@ function roomTextureLines(texture, roomWidthPx, roomHeightPx) {
           key={`garden-b-${i}`}
           listening={false}
           points={[i, roomHeightPx, i + roomHeightPx, 0]}
-          stroke="rgba(75, 101, 81, 0.22)"
+          stroke="rgba(37, 99, 235, 0.18)"
           strokeWidth={0.7}
           opacity={0.32}
         />,
@@ -631,80 +631,84 @@ function getRoomPresentationStyle(room, isPresentationMode, isSelected, isOverla
   const roomType = room.type || room.roomType || "";
 
   if (!isPresentationMode && !isDarkTheme) {
-    let fill = "rgba(239, 238, 227, 0.88)";
-    if (roomType.includes("Hall") || roomType.includes("Living") || roomType.includes("Dining")) fill = "rgba(202, 233, 231, 0.55)";
-    else if (roomType.includes("Kitchen")) fill = "rgba(202, 233, 231, 0.46)";
-    else if (roomType.includes("Bath") || roomType.includes("Toilet") || roomType.includes("Shaft")) fill = "rgba(227, 228, 212, 0.72)";
-    else if (roomType.includes("Bedroom") || roomType.includes("Guest")) fill = "rgba(230, 226, 216, 0.82)";
+    let fill = "rgba(241, 245, 249, 0.9)";
+    if (roomType.includes("Hall") || roomType.includes("Living") || roomType.includes("Dining")) fill = "rgba(219, 234, 254, 0.72)";
+    else if (roomType.includes("Kitchen")) fill = "rgba(226, 232, 240, 0.9)";
+    else if (roomType.includes("Bath") || roomType.includes("Toilet") || roomType.includes("Shaft")) fill = "rgba(236, 242, 250, 0.9)";
+    else if (roomType.includes("Bedroom") || roomType.includes("Guest")) fill = "rgba(230, 240, 255, 0.84)";
+    else if (roomType.includes("Yard") || roomType.includes("Balcony") || roomType.includes("Courtyard")) fill = "rgba(224, 242, 254, 0.66)";
+    else if (roomType.includes("Parking")) fill = "rgba(226, 232, 240, 0.82)";
 
-    if (isSelected) fill = "rgba(188, 218, 217, 0.65)";
-    if (isOverlapping) fill = "rgba(255, 116, 106, 0.3)";
+    if (isSelected) fill = "rgba(191, 219, 254, 0.82)";
+    if (isOverlapping) fill = "rgba(254, 202, 202, 0.38)";
 
     return {
       fill,
-      wallStroke: isOverlapping ? "#9f403d" : (isSelected ? "#476362" : "#5e6054"),
-      labelColor: isSelected ? "#284443" : "#313429",
-      dimensionColor: "#5e6054",
+      wallStroke: isOverlapping ? "#dc2626" : (isSelected ? "#2563eb" : "#334155"),
+      labelColor: isSelected ? "#1e3a8a" : "#0f172a",
+      dimensionColor: "#334155",
       texture: "none",
     };
   }
 
   if (!isPresentationMode && isDarkTheme) {
-    let fill = "rgba(40, 44, 46, 0.78)";
-    if (roomType.includes("Hall") || roomType.includes("Living") || roomType.includes("Dining")) fill = "rgba(0, 229, 255, 0.12)";
-    else if (roomType.includes("Kitchen")) fill = "rgba(0, 229, 255, 0.09)";
-    else if (roomType.includes("Bath") || roomType.includes("Toilet") || roomType.includes("Shaft")) fill = "rgba(206, 214, 219, 0.15)";
-    else if (roomType.includes("Bedroom") || roomType.includes("Guest")) fill = "rgba(94, 104, 110, 0.28)";
+    let fill = "rgba(30, 41, 59, 0.78)";
+    if (roomType.includes("Hall") || roomType.includes("Living") || roomType.includes("Dining")) fill = "rgba(37, 99, 235, 0.22)";
+    else if (roomType.includes("Kitchen")) fill = "rgba(37, 99, 235, 0.16)";
+    else if (roomType.includes("Bath") || roomType.includes("Toilet") || roomType.includes("Shaft")) fill = "rgba(51, 65, 85, 0.78)";
+    else if (roomType.includes("Bedroom") || roomType.includes("Guest")) fill = "rgba(71, 85, 105, 0.72)";
+    else if (roomType.includes("Yard") || roomType.includes("Balcony") || roomType.includes("Courtyard")) fill = "rgba(30, 64, 175, 0.2)";
+    else if (roomType.includes("Parking")) fill = "rgba(51, 65, 85, 0.75)";
 
-    if (isSelected) fill = "rgba(0, 229, 255, 0.2)";
-    if (isOverlapping) fill = "rgba(255, 116, 106, 0.3)";
+    if (isSelected) fill = "rgba(59, 130, 246, 0.33)";
+    if (isOverlapping) fill = "rgba(239, 68, 68, 0.35)";
 
     return {
       fill,
-      wallStroke: isOverlapping ? "#ff8a80" : (isSelected ? "#00e5ff" : "#c6d6da"),
-      labelColor: isSelected ? "#c6fbff" : "#d9e4e7",
-      dimensionColor: "#8ea6ad",
+      wallStroke: isOverlapping ? "#fca5a5" : (isSelected ? "#60a5fa" : "#cbd5e1"),
+      labelColor: isSelected ? "#dbeafe" : "#e2e8f0",
+      dimensionColor: "#94a3b8",
       texture: "none",
     };
   }
 
   if (isDarkTheme) {
-    let fill = "rgba(34, 38, 39, 0.82)";
-    if (roomType.includes("Hall") || roomType.includes("Living") || roomType.includes("Dining")) fill = "rgba(0, 229, 255, 0.15)";
-    else if (roomType.includes("Kitchen")) fill = "rgba(0, 229, 255, 0.11)";
-    else if (roomType.includes("Bath") || roomType.includes("Toilet") || roomType.includes("Shaft")) fill = "rgba(184, 200, 206, 0.2)";
-    else if (roomType.includes("Bedroom") || roomType.includes("Guest")) fill = "rgba(93, 110, 116, 0.28)";
-    else if (roomType.includes("Yard") || roomType.includes("Balcony") || roomType.includes("Courtyard")) fill = "rgba(88, 121, 126, 0.25)";
-    else if (roomType.includes("Parking")) fill = "rgba(88, 95, 99, 0.32)";
+    let fill = "rgba(30, 41, 59, 0.84)";
+    if (roomType.includes("Hall") || roomType.includes("Living") || roomType.includes("Dining")) fill = "rgba(37, 99, 235, 0.26)";
+    else if (roomType.includes("Kitchen")) fill = "rgba(30, 64, 175, 0.22)";
+    else if (roomType.includes("Bath") || roomType.includes("Toilet") || roomType.includes("Shaft")) fill = "rgba(71, 85, 105, 0.6)";
+    else if (roomType.includes("Bedroom") || roomType.includes("Guest")) fill = "rgba(51, 65, 85, 0.78)";
+    else if (roomType.includes("Yard") || roomType.includes("Balcony") || roomType.includes("Courtyard")) fill = "rgba(22, 78, 99, 0.34)";
+    else if (roomType.includes("Parking")) fill = "rgba(51, 65, 85, 0.76)";
 
-    if (isSelected) fill = "rgba(0, 229, 255, 0.23)";
-    if (isOverlapping) fill = "rgba(255, 116, 106, 0.35)";
+    if (isSelected) fill = "rgba(96, 165, 250, 0.35)";
+    if (isOverlapping) fill = "rgba(248, 113, 113, 0.38)";
 
     return {
       fill,
-      wallStroke: isOverlapping ? "#ff8a80" : (isSelected ? "#00e5ff" : "#c6d6da"),
-      labelColor: isSelected ? "#dcfbff" : "#d9e4e7",
-      dimensionColor: "#8ea6ad",
+      wallStroke: isOverlapping ? "#fca5a5" : (isSelected ? "#93c5fd" : "#cbd5e1"),
+      labelColor: isSelected ? "#eff6ff" : "#dbeafe",
+      dimensionColor: "#94a3b8",
       texture: detectTexture(roomType),
     };
   }
 
-  let fill = "rgba(239, 238, 227, 0.92)";
-  if (roomType.includes("Hall") || roomType.includes("Living") || roomType.includes("Dining")) fill = "rgba(215, 246, 220, 0.58)";
-  else if (roomType.includes("Kitchen")) fill = "rgba(202, 233, 231, 0.55)";
-  else if (roomType.includes("Bath") || roomType.includes("Toilet") || roomType.includes("Shaft")) fill = "rgba(227, 228, 212, 0.82)";
-  else if (roomType.includes("Bedroom") || roomType.includes("Guest")) fill = "rgba(230, 226, 216, 0.86)";
-  else if (roomType.includes("Yard") || roomType.includes("Balcony") || roomType.includes("Courtyard")) fill = "rgba(201, 231, 206, 0.62)";
-  else if (roomType.includes("Parking")) fill = "rgba(227, 228, 212, 0.72)";
+  let fill = "rgba(241, 245, 249, 0.95)";
+  if (roomType.includes("Hall") || roomType.includes("Living") || roomType.includes("Dining")) fill = "rgba(219, 234, 254, 0.78)";
+  else if (roomType.includes("Kitchen")) fill = "rgba(219, 234, 254, 0.66)";
+  else if (roomType.includes("Bath") || roomType.includes("Toilet") || roomType.includes("Shaft")) fill = "rgba(226, 232, 240, 0.88)";
+  else if (roomType.includes("Bedroom") || roomType.includes("Guest")) fill = "rgba(230, 240, 255, 0.86)";
+  else if (roomType.includes("Yard") || roomType.includes("Balcony") || roomType.includes("Courtyard")) fill = "rgba(224, 242, 254, 0.64)";
+  else if (roomType.includes("Parking")) fill = "rgba(226, 232, 240, 0.82)";
 
-  if (isSelected) fill = "rgba(188, 218, 217, 0.72)";
-  if (isOverlapping) fill = "rgba(255, 116, 106, 0.35)";
+  if (isSelected) fill = "rgba(191, 219, 254, 0.86)";
+  if (isOverlapping) fill = "rgba(254, 202, 202, 0.4)";
 
   return {
     fill,
-    wallStroke: isOverlapping ? "#9f403d" : (isSelected ? "#476362" : "#5e6054"),
-    labelColor: isSelected ? "#284443" : "#313429",
-    dimensionColor: "#5e6054",
+    wallStroke: isOverlapping ? "#dc2626" : (isSelected ? "#2563eb" : "#334155"),
+    labelColor: isSelected ? "#1e3a8a" : "#0f172a",
+    dimensionColor: "#334155",
     texture: detectTexture(roomType),
   };
 }
@@ -1111,8 +1115,8 @@ function CompassIndicator({ frontDirection, stageWidth, isDarkTheme, showFrontLa
         width={size}
         height={size}
         cornerRadius={size / 2}
-        fill={isDarkTheme ? "rgba(32, 36, 37, 0.9)" : "rgba(251, 249, 242, 0.94)"}
-        stroke={isDarkTheme ? "#7faeb8" : "#7a7c6f"}
+        fill={isDarkTheme ? "rgba(15, 23, 42, 0.9)" : "rgba(248, 250, 252, 0.95)"}
+        stroke={isDarkTheme ? "#60a5fa" : "#334155"}
         strokeWidth={1}
       />
       {/* N label */}
@@ -1123,13 +1127,13 @@ function CompassIndicator({ frontDirection, stageWidth, isDarkTheme, showFrontLa
         fontSize={8}
         fontFamily="sans-serif"
         fontStyle="bold"
-        fill={isDarkTheme ? "#d6f3f8" : "#313429"}
+        fill={isDarkTheme ? "#dbeafe" : "#0f172a"}
         listening={false}
       />
       {/* Arrow line */}
       <Line
         points={[cx, cy, ax, ay]}
-        stroke={isDarkTheme ? "#00e5ff" : "#476362"}
+        stroke={isDarkTheme ? "#60a5fa" : "#2563eb"}
         strokeWidth={2.5}
         lineCap="round"
       />
@@ -1140,7 +1144,7 @@ function CompassIndicator({ frontDirection, stageWidth, isDarkTheme, showFrontLa
         width={4}
         height={4}
         cornerRadius={2}
-        fill={isDarkTheme ? "#d6f3f8" : "#313429"}
+        fill={isDarkTheme ? "#dbeafe" : "#1e3a8a"}
       />
       {showFrontLabel && (
         <Text
@@ -1150,7 +1154,7 @@ function CompassIndicator({ frontDirection, stageWidth, isDarkTheme, showFrontLa
           text={`Front: ${frontDirection.charAt(0).toUpperCase() + frontDirection.slice(1)}`}
           fontSize={7}
           fontFamily="Inter, sans-serif"
-          fill={isDarkTheme ? "#9ab8bf" : "#5e6054"}
+          fill={isDarkTheme ? "#94a3b8" : "#475569"}
           align="center"
           listening={false}
         />
@@ -1172,20 +1176,17 @@ function PlotBoundaryOverlay({ boundaries, stageWidth, stageHeight, isDarkTheme 
     <Group listening={false}>
       {Object.entries(boundaries).map(([dir, status]) => {
         const { points } = edges[dir];
-        let stroke = isDarkTheme ? "rgba(154, 184, 191, 0.45)" : "rgba(122, 124, 111, 0.45)";
+        let stroke = isDarkTheme ? "rgba(148, 163, 184, 0.45)" : "rgba(100, 116, 139, 0.44)";
         let strokeW = 4;
-        let dash = [];
+        let dash = [3, 4];
 
         if (status === "front") {
-          stroke = isDarkTheme ? "#00e5ff" : "#476362";
+          stroke = isDarkTheme ? "#60a5fa" : "#2563eb";
           dash = [8, 4];
         } else if (status === "open") {
-          stroke = isDarkTheme ? "#67f3ff" : "#4e6954";
-          dash = [4, 4];
-          strokeW = 2;
-        } else {
-          // Hatched looking default
-          dash = [2, 4];
+          stroke = isDarkTheme ? "rgba(147, 197, 253, 0.8)" : "rgba(59, 130, 246, 0.82)";
+          dash = [5, 4];
+          strokeW = 3;
         }
 
         return (
@@ -1217,7 +1218,6 @@ function GridFloorPlanEditor({
   const [showFurniture, setShowFurniture] = useState(false);
   const [isPresentationMode, setIsPresentationMode] = useState(false);
   const [stageWidth, setStageWidth] = useState(960);
-  const [copyFeedback, setCopyFeedback] = useState(null);
   const [editorToast, setEditorToast] = useState("");
   const wrapperRef = useRef(null);
   const editorShellRef = useRef(null);
@@ -1704,36 +1704,6 @@ function GridFloorPlanEditor({
     setSelectedId(newId);
   };
 
-  /* ── Export Layout Schema ── */
-  const handleCopySchema = () => {
-    const cleanRooms = rooms.map(room => ({
-      id: room.id,
-      type: room.type,
-      zone: room.zone || room.roomType, // fallback if zone is missing
-      x: room.x,
-      y: room.y,
-      width: room.width,
-      height: room.height
-    }));
-
-    const payload = {
-      plot: { width: plotWidth, height: plotHeight, front: frontDirection },
-      boundaries: boundaries,
-      layout: cleanRooms
-    };
-
-    navigator.clipboard.writeText(JSON.stringify(payload, null, 2))
-      .then(() => {
-        setCopyFeedback("Copied!");
-        setTimeout(() => setCopyFeedback(null), 2000);
-      })
-      .catch(err => {
-        console.error("Failed to copy schema: ", err);
-        setCopyFeedback("Failed!");
-        setTimeout(() => setCopyFeedback(null), 2000);
-      });
-  };
-
   /* ── Delete selected room ── */
   const deleteSelectedRoom = () => {
     if (!selectedId) return;
@@ -2017,29 +1987,6 @@ function GridFloorPlanEditor({
 
   return (
     <div ref={editorShellRef} className={`editor-shell ${isPresentationMode ? "presentation-sheet" : ""}`}>
-      <div className="furniture-toggle-container">
-        <button 
-          className={`furniture-toggle-btn mode-toggle-btn mode-left-btn ${!isPresentationMode ? 'active' : ''}`}
-          onClick={() => setIsPresentationMode(false)}
-        >
-          Edit
-        </button>
-        <button 
-          className={`furniture-toggle-btn mode-toggle-btn mode-right-btn ${isPresentationMode ? 'active' : ''}`}
-          onClick={() => {
-            setIsPresentationMode(true);
-            setSelectedId(null);
-          }}
-        >
-          Present
-        </button>
-        <button 
-          className={`furniture-toggle-btn toolbar-furniture-btn ${showFurniture ? 'active' : ''}`}
-          onClick={() => setShowFurniture(!showFurniture)}
-        >
-          {showFurniture ? "Furniture On" : "Furniture Off"}
-        </button>
-      </div>
       {editorToast ? (
         <div className="editor-toast" role="status" aria-live="polite">
           {editorToast}
@@ -2062,6 +2009,30 @@ function GridFloorPlanEditor({
         }}
         ref={wrapperRef}
       >
+        <div className="canvas-floating-toolbar">
+          <button
+            className={`furniture-toggle-btn mode-toggle-btn mode-left-btn ${!isPresentationMode ? "active" : ""}`}
+            onClick={() => setIsPresentationMode(false)}
+          >
+            Edit
+          </button>
+          <button
+            className={`furniture-toggle-btn mode-toggle-btn mode-right-btn ${isPresentationMode ? "active" : ""}`}
+            onClick={() => {
+              setIsPresentationMode(true);
+              setSelectedId(null);
+            }}
+          >
+            Present
+          </button>
+          <button
+            className={`furniture-toggle-btn toolbar-furniture-btn ${showFurniture ? "active" : ""}`}
+            onClick={() => setShowFurniture(!showFurniture)}
+          >
+            {showFurniture ? "Furniture On" : "Furniture Off"}
+          </button>
+        </div>
+
         {rooms.length === 0 ? (
           <div className="editor-empty-state">
             <p>No layout loaded yet.</p>
@@ -2090,7 +2061,7 @@ function GridFloorPlanEditor({
         >
           <Layer listening={false}>
             <Rect
-              fill={isDarkTheme ? (isPresentationMode ? "#171a1b" : "#121416") : (isPresentationMode ? "#fbf9f2" : "#f5f4eb")}
+              fill={isDarkTheme ? (isPresentationMode ? "#0f172a" : "#0b1220") : (isPresentationMode ? "#f1f5f9" : "#f8fafc")}
               height={stageHeight}
               width={stageWidth}
               x={0}
@@ -2103,7 +2074,7 @@ function GridFloorPlanEditor({
                   y={8}
                   width={stageWidth - 16}
                   height={stageHeight - 16}
-                  stroke={isDarkTheme ? "rgba(0, 229, 255, 0.45)" : "rgba(122, 124, 111, 0.5)"}
+                  stroke={isDarkTheme ? "rgba(96, 165, 250, 0.5)" : "rgba(37, 99, 235, 0.35)"}
                   strokeWidth={1.8}
                   listening={false}
                 />
@@ -2117,8 +2088,8 @@ function GridFloorPlanEditor({
               fill="transparent"
               height={stageHeight}
               stroke={isDarkTheme
-                ? (isPresentationMode ? "rgba(120, 181, 192, 0.65)" : "rgba(120, 181, 192, 0.45)")
-                : (isPresentationMode ? "rgba(122, 124, 111, 0.52)" : "rgba(122, 124, 111, 0.34)")}
+                ? (isPresentationMode ? "rgba(148, 163, 184, 0.62)" : "rgba(148, 163, 184, 0.46)")
+                : (isPresentationMode ? "rgba(51, 65, 85, 0.42)" : "rgba(100, 116, 139, 0.3)")}
               strokeWidth={1.2}
               width={stageWidth}
               x={0}
@@ -2345,10 +2316,10 @@ function GridFloorPlanEditor({
                       y={2}
                       width={Math.max(0, roomWidthPx - 4)}
                       height={Math.max(0, roomHeightPx - 4)}
-                      stroke={isDarkTheme ? "#00e5ff" : "#476362"}
+                      stroke={isDarkTheme ? "#60a5fa" : "#2563eb"}
                       strokeWidth={1.8}
                       dash={[8, 4]}
-                      shadowColor={isDarkTheme ? "#00e5ff" : "#476362"}
+                      shadowColor={isDarkTheme ? "#60a5fa" : "#2563eb"}
                       shadowBlur={8}
                       shadowOpacity={isDarkTheme ? 0.38 : 0.2}
                     />
@@ -2683,15 +2654,15 @@ function GridFloorPlanEditor({
               above every room Group and can never be intercepted by them */}
           <Layer>
             <Transformer
-              anchorFill="#476362"
-              anchorStroke="#fbf9f2"
+              anchorFill="#2563eb"
+              anchorStroke="#e2e8f0"
               anchorStrokeWidth={1.2}
               anchorSize={10}
               anchorDragBoundFunc={(_oldPosition, newPosition) => ({
                 x: newPosition.x,
                 y: newPosition.y,
               })}
-              borderStroke="#476362"
+              borderStroke="#2563eb"
               borderStrokeWidth={1.8}
               borderDash={[6, 4]}
               boundBoxFunc={(oldBox, newBox) => ({
@@ -2715,6 +2686,31 @@ function GridFloorPlanEditor({
             />
           </Layer>
         </Stage>
+
+        {!isPresentationMode ? (
+          <div className="canvas-add-room-dock">
+            <div className="toolbar-header">
+              <span className="toolbar-title">Add Room</span>
+            </div>
+            {filteredCatalog.map((category) => (
+              <div className="toolbar-category" key={category.category}>
+                <span className="toolbar-category-label">{category.category}</span>
+                <div className="toolbar-buttons">
+                  {category.rooms.map((entry) => (
+                    <button
+                      className="add-room-btn"
+                      key={entry.type}
+                      onClick={() => addRoom(entry.type, entry.defaultW, entry.defaultH)}
+                      title={`Add ${entry.type} (${entry.defaultW}x${entry.defaultH} ft)`}
+                    >
+                      {entry.type}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : null}
       </div>
 
       {/* ── Room Selection Panel ── */}
@@ -2782,38 +2778,6 @@ function GridFloorPlanEditor({
         </div>
       )}
 
-      {/* ── Add Room Toolbar ── */}
-      {!isPresentationMode && (
-        <div className="add-room-toolbar">
-          <div className="toolbar-header">
-          <span className="toolbar-title">Add Room</span>
-          <button
-            className={`copy-schema-btn ${copyFeedback ? "success" : ""}`}
-            onClick={handleCopySchema}
-            disabled={!!copyFeedback}
-          >
-            {copyFeedback || "📋 Copy Layout Schema"}
-          </button>
-        </div>
-        {filteredCatalog.map((category) => (
-          <div className="toolbar-category" key={category.category}>
-            <span className="toolbar-category-label">{category.category}</span>
-            <div className="toolbar-buttons">
-              {category.rooms.map((entry) => (
-                <button
-                  className="add-room-btn"
-                  key={entry.type}
-                  onClick={() => addRoom(entry.type, entry.defaultW, entry.defaultH)}
-                  title={`Add ${entry.type} (${entry.defaultW}×${entry.defaultH} ft)`}
-                >
-                  {entry.type}
-                </button>
-              ))}
-            </div>
-          </div>
-        ))}
-        </div>
-      )}
     </div>
   );
 }
